@@ -9,9 +9,26 @@ Router による動的な専門家選抜、並列実行、Moderator による統
 
 ## ワークフロー実装
 
-本リポジトリには3つのワークフロー実装が含まれています:
+本リポジトリには4つのワークフロー実装が含まれています:
 
-### 1. SelectiveGroupChatWorkflow ⭐ **推奨**
+### 1. TaskBasedWorkflow 🆕 **NEW**
+
+**最新の実装**で、Planner による動的タスク計画とWorker による順次実行を実現しています。
+
+```
+User → Planner (計画作成) → Workers (タスク実行) → Final Report
+```
+
+**特徴:**
+- ✅ Planner が目標を分析してタスク計画を自動生成
+- ✅ 各タスクに担当専門家を自動割り当て
+- ✅ タスクボードで進捗を管理（Queued/Doing/Done/Blocked）
+- ✅ タスクの順次実行と結果の統合
+- ✅ 複雑な目標を段階的に達成
+
+**詳細:** [TaskBasedWorkflow README](src/TaskBasedWorkflow/README.md)
+
+### 2. SelectiveGroupChatWorkflow ⭐ **推奨**
 
 **最新の実装**で、動的エージェント選抜とモデレーターによる統合を実現しています。
 
@@ -28,7 +45,7 @@ User → Router (選抜) → Specialists (並列) → Moderator (統合) → Fin
 
 **詳細:** [SelectiveGroupChatWorkflow README](src/SelectiveGroupChatWorkflow/README.md)
 
-### 2. HandoffWorkflow
+### 3. HandoffWorkflow
 
 ルーターと専門家グループ間の双方向ハンドオフを実装した従来型のワークフローです。
 
@@ -43,7 +60,7 @@ User → Router ⇔ Specialists (ハンドオフ) → Router (統合) → Final 
 
 **詳細:** [HandoffWorkflow](src/HandoffWorkflow)
 
-### 3. GroupChatWorkflow
+### 4. GroupChatWorkflow
 
 RoundRobin 方式で全専門家が順番に発言する従来型のグループチャット実装です。
 
@@ -142,6 +159,13 @@ dotnet build
 
 ## 実行方法
 
+### TaskBasedWorkflow を実行 🆕
+
+```bash
+cd src/TaskBasedWorkflow
+dotnet run
+```
+
 ### SelectiveGroupChatWorkflow を実行（推奨）
 
 ```bash
@@ -214,14 +238,17 @@ Negotiation 専門家からは事前準備の重要性、Supplier 専門家か�
 
 ## ワークフロー比較
 
-| 特徴 | SelectiveGroupChat | Handoff | GroupChat |
-|-----|-------------------|---------|-----------|
-| 専門家選抜 | ✅ 動的選抜 | ❌ 全員利用可能 | ❌ 全員参加 |
-| 並列実行 | ✅ あり | ❌ なし | ❌ なし |
-| 統合機能 | ✅ Moderator | Router | なし |
-| コスト効率 | ⭐⭐⭐ | ⭐⭐ | ⭐ |
-| 応答時間 | ⭐⭐⭐ | ⭐⭐ | ⭐ |
-| 対話能力 | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| 特徴 | TaskBased | SelectiveGroupChat | Handoff | GroupChat |
+|-----|-----------|-------------------|---------|-----------|
+| 専門家選抜 | ✅ Plannerが割当 | ✅ 動的選抜 | ❌ 全員利用可能 | ❌ 全員参加 |
+| タスク管理 | ✅ タスクボード | ❌ なし | ❌ なし | ❌ なし |
+| 並列実行 | ❌ 順次実行 | ✅ あり | ❌ なし | ❌ なし |
+| 統合機能 | ✅ 最終レポート | ✅ Moderator | Router | なし |
+| 計画性 | ⭐⭐⭐ | ⭐ | ⭐⭐ | ⭐ |
+| コスト効率 | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐ |
+| 応答時間 | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐ |
+| 対話能力 | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
+| 適用場面 | 複雑な目標の段階的達成 | 効率的な専門家活用 | 専門家間の対話が必要 | 全員の意見が必要 |
 
 ## 技術スタック
 
