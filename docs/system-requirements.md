@@ -93,8 +93,47 @@ User --> Router Executor --selects--> [Contract | Spend | Negotiation | Sourcing
 - Router の選抜結果と Moderator の品質スコアをダッシュボード化し、プロンプト調整や専門家構成の改善に活用。
 - 新たな専門領域を追加する際は、System Prompt と Executor 登録を設定駆動で行えるよう拡張ポイントを提供。
 
-## 5. 今後の課題
+## 5. 実装状況
+
+### 5.1 SelectiveGroupChatWorkflow (実装完了)
+
+動的エージェント選抜とモデレーターによる統合を実装した新しいワークフローです。
+
+**アーキテクチャ:**
+```
+Phase 1: Router が必要な専門家を選抜
+Phase 2: 選抜された専門家が並列で意見を提供
+Phase 3: Moderator が専門家の意見を統合して最終回答を生成
+```
+
+**主な特徴:**
+- Router エージェントが JSON 形式で必要な専門家を動的に選抜
+- 選抜された専門家のみが並列実行されることでコストと応答時間を最適化
+- Moderator エージェントが各専門家の所見を統合し、構造化された最終回答を生成
+- 各フェーズが独立したワークフローとして実行され、明確な責任分離を実現
+
+**フォールバック機能:**
+- Router の JSON 出力がパース失敗時は Knowledge 専門家をデフォルトで使用
+- 個別の専門家エージェントがエラーの場合でも他の専門家の意見で継続
+
+**プロジェクト構成:**
+- `src/SelectiveGroupChatWorkflow/Program.cs`: メインワークフロー実装
+- `src/SelectiveGroupChatWorkflow/SelectiveGroupChatWorkflow.csproj`: プロジェクト設定
+- Router, Specialist, Moderator の各エージェントを ChatClientAgent として実装
+- Microsoft.Agents.AI.Workflows を使用した段階的ワークフロー実行
+
+### 5.2 HandoffWorkflow (既存)
+
+ルーターと専門家グループ間の双方向ハンドオフを実装。
+すべての専門家が利用可能で、ルーターが必要に応じてハンドオフを行う。
+
+### 5.3 GroupChatWorkflow (既存)
+
+RoundRobin 方式で全専門家が順番に発言する従来型のグループチャット実装。
+
+## 6. 今後の課題
 
 - Router JSON のスキーマ厳格化とバリデーション、観測データを用いた自動チューニングの検討。
 - HITL 前後の承認履歴管理、監査ログ整備。
 - Agent Framework Workflow のチェックポイント機能を活かした途中復旧とイベント可視化の実装。
+- SelectiveGroupChatWorkflow への HITL 統合と品質スコアベースの再試行機能の追加。
