@@ -1,0 +1,63 @@
+## Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+
+## VS Code directories
+.vscode/
+
+## Visual Studio caches and settings
+.vs/
+*.user
+*.suo
+*.userosscache
+*.userprefs
+
+## VS auto-generated files
+*.VC.db
+*.VC.VC.opendb
+
+## Build outputs
+*.dll
+*.exe
+*.app
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+*.nupkg
+*.snupkg
+*.pdb
+*.cache
+*.config
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+## Rider
+.idea/
+*.sln.iml
+
+## ASP.NET Scaffolding
+ScaffoldingReadMe.txt
+
+## User-specific files
+*.rsuser
+*.sln.docstates
+
+## Logs
+*.log
+
+## Others
+*.dbmdl
+*.jfm
+*~
+*.swp
+.DS_Store
+Thumbs.db
