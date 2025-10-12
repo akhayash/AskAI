@@ -1,10 +1,18 @@
 using Azure.AI.OpenAI;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Agents.AI.Workflows.Reflection;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using System.Diagnostics;
 using System.Text;
 using ChatRole = Microsoft.Extensions.AI.ChatRole;
 
@@ -20,6 +28,70 @@ var configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .Build();
 
+// OpenTelemetry とロギングを設定
+var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
+    ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
+
+var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
+    ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
+    ?? "http://localhost:4317";
+
+using var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder.AddOpenTelemetry(options =>
+    {
+        options.SetResourceBuilder(ResourceBuilder.CreateDefault()
+            .AddService("HandoffWorkflow"));
+
+        // メッセージテンプレートを展開して送信（読みやすくするため）
+        options.IncludeFormattedMessage = true;
+        options.IncludeScopes = true;
+
+        options.AddOtlpExporter(exporterOptions =>
+        {
+            exporterOptions.Endpoint = new Uri(otlpEndpoint);
+        });
+
+        // コンソールにも構造化ログを出力（値を展開）
+        options.AddConsoleExporter(consoleOptions =>
+        {
+            consoleOptions.Targets = OpenTelemetry.Exporter.ConsoleExporterOutputTargets.Console;
+        });
+    });
+
+    // SimpleConsoleFormatter を使用して、構造化ログを読みやすく表示
+    builder.AddSimpleConsole(options =>
+    {
+        options.IncludeScopes = true;
+        options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+    });
+
+    builder.SetMinimumLevel(LogLevel.Information);
+});
+
+// OpenTelemetry Tracing を設定
+var activitySource = new ActivitySource("HandoffWorkflow");
+
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .SetResourceBuilder(ResourceBuilder.CreateDefault()
+        .AddService("HandoffWorkflow"))
+    .AddSource("HandoffWorkflow")
+    .AddHttpClientInstrumentation()
+    .AddOtlpExporter(exporterOptions =>
+    {
+        exporterOptions.Endpoint = new Uri(otlpEndpoint);
+    })
+    .AddConsoleExporter()
+    .Build();
+
+var logger = loggerFactory.CreateLogger<Program>();
+logger.LogInformation("=== アプリケーション起動 ===");
+logger.LogInformation("テレメトリ設定: OTLP Endpoint = {OtlpEndpoint}", otlpEndpoint);
+if (!string.IsNullOrEmpty(appInsightsConnectionString))
+{
+    logger.LogInformation("Application Insights 接続文字列が設定されています");
+}
+
 // 環境変数を設定から取得（appsettings.json → 環境変数の順で優先）
 var endpoint = configuration["environmentVariables:AZURE_OPENAI_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
@@ -29,11 +101,10 @@ var deployment = configuration["environmentVariables:AZURE_OPENAI_DEPLOYMENT_NAM
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
     ?? throw new InvalidOperationException("環境変数 AZURE_OPENAI_DEPLOYMENT_NAME が設定されていません。");
 
-Console.WriteLine($"エンドポイント: {endpoint}");
-Console.WriteLine($"デプロイメント名: {deployment}");
+logger.LogInformation("エンドポイント: {Endpoint}", endpoint);
+logger.LogInformation("デプロイメント名: {DeploymentName}", deployment);
 
-Console.WriteLine("\n認証情報の取得中（Azure CLI のみを使用）...");
-// Visual Studio での Managed Identity エラーを回避するため、Azure CLI 認証のみを有効化
+logger.LogInformation("認証情報の取得中（Azure CLI のみを使用）...");
 var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
 {
     ExcludeEnvironmentCredential = true,
@@ -47,21 +118,24 @@ var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
     ExcludeInteractiveBrowserCredential = true,
     ExcludeWorkloadIdentityCredential = true
 });
-Console.WriteLine("認証情報取得完了");
+logger.LogInformation("認証情報取得完了");
 
 var openAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
 var chatClient = openAIClient.GetChatClient(deployment);
 IChatClient extensionsAIChatClient = chatClient.AsIChatClient();
 
-Console.WriteLine("Router Workflow デモ - 質問を入力してください。");
+logger.LogInformation("=== Router Workflow デモ ===");
+Console.WriteLine("質問を入力してください。");
 Console.Write("質問> ");
 var question = Console.ReadLine();
 
 if (string.IsNullOrWhiteSpace(question))
 {
-    Console.WriteLine("質問が空です。");
+    logger.LogWarning("質問が空です。");
     return;
 }
+
+logger.LogInformation("受信した質問: {Question}", question);
 
 // ルーターエージェントを作成
 var routerAgent = CreateRouterAgent(extensionsAIChatClient);
@@ -87,65 +161,86 @@ var messages = new List<ChatMessage>
     new ChatMessage(ChatRole.User, question)
 };
 
-Console.WriteLine("\n--- ワークフロー実行開始 ---");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+logger.LogInformation("ワークフロー実行開始");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 // タイムアウト設定（60秒に延長）
 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
 
 try
 {
-    Console.WriteLine("ワークフローをエージェントに変換中...");
-    // ワークフローを型付きに変換してAIAgentとしてラップ
-    var workflowAgent = await workflow.AsAgentAsync("workflow", "Routing Workflow");
-    Console.WriteLine("エージェント変換完了");
-    
-    var thread = workflowAgent.GetNewThread();
-    Console.WriteLine("スレッド作成完了");
+    using var workflowActivity = activitySource.StartActivity("HandoffWorkflow", ActivityKind.Internal);
+    workflowActivity?.SetTag("question", question);
 
-    Console.WriteLine($"メッセージ数: {messages.Count}");
-    Console.WriteLine($"メッセージ内容: {messages[0].Text}");
-    Console.WriteLine("ストリーミング開始...\n");
+    logger.LogInformation("ワークフローをエージェントに変換中...");
+    var workflowAgent = await workflow.AsAgentAsync("workflow", "Routing Workflow");
+    logger.LogInformation("エージェント変換完了");
+
+    var thread = workflowAgent.GetNewThread();
+    logger.LogInformation("スレッド作成完了");
+
+    logger.LogInformation("メッセージ数: {MessageCount}", messages.Count);
+    logger.LogInformation("メッセージ内容: {MessageText}", messages[0].Text);
+    logger.LogInformation("ストリーミング開始...");
 
     var updateCount = 0;
     var messageCount = 0; // 完了したメッセージ数
     var maxMessages = 20; // 最大メッセージ数
     var currentAgentId = "";
+    var currentAgentName = "";
     var currentMessage = new System.Text.StringBuilder();
-    
+    Activity? agentActivity = null;
+
     await foreach (var update in workflowAgent.RunStreamingAsync(messages, thread, cancellationToken: cts.Token))
     {
         updateCount++;
-        
+
         // エージェントが変わった場合、新しいメッセージとしてカウント
         if (!string.IsNullOrEmpty(update.AgentId) && update.AgentId != currentAgentId)
         {
+            // 前のエージェントの Span を終了
+            if (agentActivity != null)
+            {
+                agentActivity.SetTag("message.length", currentMessage.Length);
+                agentActivity.SetTag("message.content", currentMessage.ToString());
+                logger.LogInformation("【完了】エージェント: {AgentName} ({AgentId}), 内容: {Content}",
+                    currentAgentName, currentAgentId, currentMessage.ToString());
+                agentActivity.Dispose();
+            }
+
             // 前のメッセージを出力
             if (currentMessage.Length > 0)
             {
-                Console.WriteLine($"\n\n[メッセージ完了 #{messageCount}]");
-                Console.WriteLine($"  エージェント: {currentAgentId}");
-                Console.WriteLine($"  内容: {currentMessage}");
-                Console.WriteLine("---");
+                Console.WriteLine("\n");
                 currentMessage.Clear();
             }
-            
+
             messageCount++;
             currentAgentId = update.AgentId;
-            
-            Console.WriteLine($"\n\n[メッセージ開始 #{messageCount}]");
-            Console.WriteLine($"  エージェント名: {update.AuthorName ?? "不明"}");
-            Console.WriteLine($"  エージェントID: {update.AgentId}");
-            Console.WriteLine($"  ロール: {update.Role?.ToString() ?? "不明"}");
-            Console.WriteLine("  応答: ");
-            
+            currentAgentName = update.AuthorName ?? "不明";
+
+            // 新しいエージェントの Span を開始
+            agentActivity = activitySource.StartActivity($"Agent.{currentAgentName}", ActivityKind.Internal);
+            agentActivity?.SetTag("agent.name", currentAgentName);
+            agentActivity?.SetTag("agent.id", currentAgentId);
+            agentActivity?.SetTag("message.count", messageCount);
+            agentActivity?.SetTag("role", update.Role?.ToString() ?? "不明");
+
+            logger.LogInformation("【開始】[#{MessageCount}] エージェント名: {AgentName}, エージェントID: {AgentId}, ロール: {Role}",
+                messageCount, currentAgentName, update.AgentId, update.Role?.ToString() ?? "不明");
+
+            Console.WriteLine($"\n┌─ [{messageCount}] {currentAgentName} ({update.Role?.ToString() ?? "不明"}) ─────────────────");
+            Console.Write("│ ");
+
             // 最大メッセージ数チェック
             if (messageCount > maxMessages)
             {
-                Console.WriteLine($"\n⚠️ 最大メッセージ数 ({maxMessages}) に達しました。");
+                logger.LogWarning("⚠️ 最大メッセージ数 ({MaxMessages}) に達しました。", maxMessages);
                 break;
             }
         }
-        
+
         // テキストを蓄積
         if (!string.IsNullOrWhiteSpace(update.Text))
         {
@@ -154,36 +249,51 @@ try
         }
     }
 
-    // 最後のメッセージを出力
-    if (currentMessage.Length > 0)
+    // 最後のエージェントの Span を終了
+    if (agentActivity != null)
     {
-        Console.WriteLine($"\n\n[メッセージ完了 #{messageCount}]");
-        Console.WriteLine($"  エージェント: {currentAgentId}");
-        Console.WriteLine($"  完全な内容: {currentMessage}");
-        Console.WriteLine("---");
+        agentActivity.SetTag("message.length", currentMessage.Length);
+        agentActivity.SetTag("message.content", currentMessage.ToString());
+        logger.LogInformation("【完了】エージェント: {AgentName} ({AgentId}), 内容: {Content}",
+            currentAgentName, currentAgentId, currentMessage.ToString());
+        agentActivity.Dispose();
     }
 
-    Console.WriteLine($"\n\n合計更新数: {updateCount}, メッセージ数: {messageCount}");
+    // 最後のメッセージの終了
+    if (currentMessage.Length > 0)
+    {
+        Console.WriteLine("\n└──────────────────────────────────────");
+    }
+
+    workflowActivity?.SetTag("total.messages", messageCount);
+    workflowActivity?.SetTag("total.updates", updateCount);
+
+    logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    logger.LogInformation("合計更新数: {UpdateCount}, メッセージ数: {MessageCount}", updateCount, messageCount);
+    logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 }
 catch (OperationCanceledException)
 {
-    Console.WriteLine("\n⚠️ タイムアウト: ワークフローが時間内に完了しませんでした。");
+    logger.LogWarning("⚠️ タイムアウト: ワークフローが時間内に完了しませんでした。");
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"\n❌ エラー: {ex.GetType().Name}");
-    Console.WriteLine($"メッセージ: {ex.Message}");
+    logger.LogError(ex, "❌ エラー: {ExceptionType}, メッセージ: {ErrorMessage}",
+        ex.GetType().Name, ex.Message);
     if (ex.InnerException != null)
     {
-        Console.WriteLine($"内部エラー: {ex.InnerException.Message}");
+        logger.LogError("内部エラー: {InnerErrorMessage}", ex.InnerException.Message);
     }
-    Console.WriteLine($"スタックトレース:\n{ex.StackTrace}");
 }
 
-Console.WriteLine("\n--- ワークフロー実行完了 ---");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+logger.LogInformation("ワークフロー実行完了");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 Console.WriteLine("\nEnter キーを押して終了してください...");
 Console.ReadLine();
+
+logger.LogInformation("=== アプリケーション終了 ===");
 
 static ChatClientAgent CreateRouterAgent(IChatClient chatClient)
 {
