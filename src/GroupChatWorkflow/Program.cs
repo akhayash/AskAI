@@ -6,9 +6,12 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using System.Diagnostics;
 using System.Text;
 using ChatRole = Microsoft.Extensions.AI.ChatRole;
 
@@ -25,10 +28,10 @@ var configuration = new ConfigurationBuilder()
     .Build();
 
 // OpenTelemetry とロギングを設定
-var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"] 
+var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
     ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
 
-var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] 
+var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
     ?? "http://localhost:4317";
 
@@ -38,17 +41,47 @@ using var loggerFactory = LoggerFactory.Create(builder =>
     {
         options.SetResourceBuilder(ResourceBuilder.CreateDefault()
             .AddService("GroupChatWorkflow"));
-        
+
+        // メッセージテンプレートを展開して送信（読みやすくするため）
+        options.IncludeFormattedMessage = true;
+        options.IncludeScopes = true;
+
         options.AddOtlpExporter(exporterOptions =>
         {
             exporterOptions.Endpoint = new Uri(otlpEndpoint);
         });
-        
-        options.AddConsoleExporter();
+
+        // コンソールにも構造化ログを出力（値を展開）
+        options.AddConsoleExporter(consoleOptions =>
+        {
+            consoleOptions.Targets = OpenTelemetry.Exporter.ConsoleExporterOutputTargets.Console;
+        });
     });
-    
+
+    // SimpleConsoleFormatter を使用して、構造化ログを読みやすく表示
+    builder.AddSimpleConsole(options =>
+    {
+        options.IncludeScopes = true;
+        options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+    });
+
     builder.SetMinimumLevel(LogLevel.Information);
 });
+
+// OpenTelemetry Tracing を設定
+var activitySource = new ActivitySource("GroupChatWorkflow");
+
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .SetResourceBuilder(ResourceBuilder.CreateDefault()
+        .AddService("GroupChatWorkflow"))
+    .AddSource("GroupChatWorkflow")
+    .AddHttpClientInstrumentation()
+    .AddOtlpExporter(exporterOptions =>
+    {
+        exporterOptions.Endpoint = new Uri(otlpEndpoint);
+    })
+    .AddConsoleExporter()
+    .Build();
 
 var logger = loggerFactory.CreateLogger<Program>();
 logger.LogInformation("=== アプリケーション起動 ===");
@@ -114,8 +147,8 @@ var supplierAgent = CreateSpecialistAgent(extensionsAIChatClient, "Supplier", "�
 // GitHubサンプルに基づく正しい Group Chat 実装
 // RoundRobinGroupChatManager を使用して、全員が順番に発言
 var workflow = AgentWorkflowBuilder
-    .CreateGroupChatBuilderWith(agents => new AgentWorkflowBuilder.RoundRobinGroupChatManager(agents) 
-    { 
+    .CreateGroupChatBuilderWith(agents => new AgentWorkflowBuilder.RoundRobinGroupChatManager(agents)
+    {
         MaximumIterationCount = 5  // 最大5ラウンドまで議論
     })
     .AddParticipants([contractAgent, spendAgent, negotiationAgent, sourcingAgent, knowledgeAgent, supplierAgent])
@@ -135,34 +168,52 @@ using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(180));
 
 try
 {
+    using var workflowActivity = activitySource.StartActivity("GroupChatWorkflow", ActivityKind.Internal);
+    workflowActivity?.SetTag("question", question);
+
     var workflowAgent = await workflow.AsAgentAsync("group_chat", "Group Chat Workflow");
     var thread = workflowAgent.GetNewThread();
 
     var messageCount = 0;
     var currentAgentName = "";
     var currentMessage = new StringBuilder();
-    
+    Activity? agentActivity = null;
+
     await foreach (var update in workflowAgent.RunStreamingAsync(messages, thread, cancellationToken: cts.Token))
     {
         // エージェントが変わった場合
         if (!string.IsNullOrEmpty(update.AuthorName) && update.AuthorName != currentAgentName)
         {
+            // 前のエージェントの Span を終了
+            if (agentActivity != null)
+            {
+                agentActivity.SetTag("message.length", currentMessage.Length);
+                agentActivity.SetTag("message.content", currentMessage.ToString());
+                logger.LogInformation("【完了】{AgentName}: {Message}", currentAgentName, currentMessage.ToString());
+                agentActivity.Dispose();
+            }
+
             // 前のメッセージを出力
             if (currentMessage.Length > 0)
             {
-                Console.WriteLine("¥n");
+                Console.WriteLine("\n");
                 currentMessage.Clear();
             }
-            
+
             messageCount++;
             currentAgentName = update.AuthorName;
-            
+
+            // 新しいエージェントの Span を開始
+            agentActivity = activitySource.StartActivity($"Agent.{currentAgentName}", ActivityKind.Internal);
+            agentActivity?.SetTag("agent.name", currentAgentName);
+            agentActivity?.SetTag("message.count", messageCount);
+
             // 新しいエージェントのヘッダー
-            logger.LogInformation("[{MessageCount}] {AgentName} の発言", messageCount, currentAgentName);
+            logger.LogInformation("【開始】[{MessageCount}] {AgentName} の発言", messageCount, currentAgentName);
             Console.WriteLine($"\n┌─ [{messageCount}] {currentAgentName} ─────────────────");
             Console.Write("│ ");
         }
-        
+
         // テキストを蓄積して表示
         if (!string.IsNullOrWhiteSpace(update.Text))
         {
@@ -171,13 +222,22 @@ try
         }
     }
 
+    // 最後のエージェントの Span を終了
+    if (agentActivity != null)
+    {
+        agentActivity.SetTag("message.length", currentMessage.Length);
+        agentActivity.SetTag("message.content", currentMessage.ToString());
+        logger.LogInformation("【完了】{AgentName}: {Message}", currentAgentName, currentMessage.ToString());
+        agentActivity.Dispose();
+    }
+
     // 最後のメッセージの終了
     if (currentMessage.Length > 0)
     {
         Console.WriteLine("\n└──────────────────────────────────────");
-        logger.LogInformation("最後のメッセージ: {Message}", currentMessage.ToString());
     }
 
+    workflowActivity?.SetTag("total.messages", messageCount);
     logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     logger.LogInformation("合計メッセージ数: {MessageCount}", messageCount);
     logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -188,7 +248,7 @@ catch (OperationCanceledException)
 }
 catch (Exception ex)
 {
-    logger.LogError(ex, "❌ エラー: {ExceptionType}, メッセージ: {ErrorMessage}", 
+    logger.LogError(ex, "❌ エラー: {ExceptionType}, メッセージ: {ErrorMessage}",
         ex.GetType().Name, ex.Message);
     if (ex.InnerException != null)
     {

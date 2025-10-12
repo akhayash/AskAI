@@ -6,9 +6,12 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using ChatRole = Microsoft.Extensions.AI.ChatRole;
@@ -26,10 +29,10 @@ var configuration = new ConfigurationBuilder()
     .Build();
 
 // OpenTelemetry とロギングを設定
-var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"] 
+var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
     ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
 
-var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] 
+var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
     ?? "http://localhost:4317"; // Aspire Dashboard デフォルト
 
@@ -39,31 +42,47 @@ using var loggerFactory = LoggerFactory.Create(builder =>
     {
         options.SetResourceBuilder(ResourceBuilder.CreateDefault()
             .AddService("SelectiveGroupChatWorkflow"));
-        
-        // Application Insights が設定されている場合
-        if (!string.IsNullOrEmpty(appInsightsConnectionString))
+
+        // メッセージテンプレートを展開して送信（読みやすくするため）
+        options.IncludeFormattedMessage = true;
+        options.IncludeScopes = true;
+
+        options.AddOtlpExporter(exporterOptions =>
         {
-            // Azure Monitor Exporter は Trace/Metrics 用なので、ログは OTLP で送信
-            options.AddOtlpExporter(exporterOptions =>
-            {
-                exporterOptions.Endpoint = new Uri(otlpEndpoint);
-            });
-        }
-        else
+            exporterOptions.Endpoint = new Uri(otlpEndpoint);
+        });
+
+        // コンソールにも構造化ログを出力（値を展開）
+        options.AddConsoleExporter(consoleOptions =>
         {
-            // Aspire Dashboard に送信
-            options.AddOtlpExporter(exporterOptions =>
-            {
-                exporterOptions.Endpoint = new Uri(otlpEndpoint);
-            });
-        }
-        
-        // コンソールにも出力（開発時に便利）
-        options.AddConsoleExporter();
+            consoleOptions.Targets = OpenTelemetry.Exporter.ConsoleExporterOutputTargets.Console;
+        });
     });
-    
+
+    // SimpleConsoleFormatter を使用して、構造化ログを読みやすく表示
+    builder.AddSimpleConsole(options =>
+    {
+        options.IncludeScopes = true;
+        options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+    });
+
     builder.SetMinimumLevel(LogLevel.Information);
 });
+
+// OpenTelemetry Tracing を設定
+var activitySource = new ActivitySource("SelectiveGroupChatWorkflow");
+
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .SetResourceBuilder(ResourceBuilder.CreateDefault()
+        .AddService("SelectiveGroupChatWorkflow"))
+    .AddSource("SelectiveGroupChatWorkflow")
+    .AddHttpClientInstrumentation()
+    .AddOtlpExporter(exporterOptions =>
+    {
+        exporterOptions.Endpoint = new Uri(otlpEndpoint);
+    })
+    .AddConsoleExporter()
+    .Build();
 
 var logger = loggerFactory.CreateLogger<Program>();
 logger.LogInformation("=== アプリケーション起動 ===");
@@ -162,15 +181,15 @@ string routerResponse;
 try
 {
     using var routerCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-    
+
     // Create a simple workflow with just the router
     var routerWorkflow = AgentWorkflowBuilder
         .CreateHandoffBuilderWith(routerAgent)
         .Build();
-    
+
     var routerWorkflowAgent = await routerWorkflow.AsAgentAsync("router", "Router");
     var routerThread = routerWorkflowAgent.GetNewThread();
-    
+
     var responseBuilder = new StringBuilder();
     await foreach (var update in routerWorkflowAgent.RunStreamingAsync(routerMessages, routerThread, cancellationToken: routerCts.Token))
     {
@@ -179,7 +198,7 @@ try
             responseBuilder.Append(update.Text);
         }
     }
-    
+
     routerResponse = responseBuilder.ToString();
     logger.LogInformation("[Router Agent の判断]\n{RouterResponse}", routerResponse);
 }
@@ -215,14 +234,14 @@ try
         jsonText = jsonText.Substring(start, end - start).Trim();
     }
 
-    var routerDecision = JsonSerializer.Deserialize<RouterDecision>(jsonText, new JsonSerializerOptions 
-    { 
-        PropertyNameCaseInsensitive = true 
+    var routerDecision = JsonSerializer.Deserialize<RouterDecision>(jsonText, new JsonSerializerOptions
+    {
+        PropertyNameCaseInsensitive = true
     });
-    
+
     selectedSpecialists = routerDecision?.Selected ?? new List<string>();
     selectionReason = routerDecision?.Reason ?? "理由不明";
-    
+
     if (selectedSpecialists.Count == 0)
     {
         logger.LogWarning("⚠️ 専門家が選抜されませんでした。Knowledge 専門家をデフォルトで使用します。");
@@ -265,15 +284,15 @@ var specialistTasks = selectedSpecialists
         try
         {
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            
+
             // Create a simple workflow with just this specialist
             var specialistWorkflow = AgentWorkflowBuilder
                 .CreateHandoffBuilderWith(specialist)
                 .Build();
-            
+
             var specialistWorkflowAgent = await specialistWorkflow.AsAgentAsync(specialistName, specialistName);
             var specialistThread = specialistWorkflowAgent.GetNewThread();
-            
+
             var opinionBuilder = new StringBuilder();
             await foreach (var update in specialistWorkflowAgent.RunStreamingAsync(messages, specialistThread, cancellationToken: cts.Token))
             {
@@ -282,11 +301,11 @@ var specialistTasks = selectedSpecialists
                     opinionBuilder.Append(update.Text);
                 }
             }
-            
+
             var opinion = opinionBuilder.ToString();
             logger.LogInformation("[{SpecialistName} Agent の意見]", specialistName);
             logger.LogInformation("{Opinion}", opinion);
-            
+
             return (specialistName, opinion);
         }
         catch (Exception ex)
@@ -307,7 +326,7 @@ logger.LogInformation("フェーズ 3: モデレーターが専門家の意見�
 logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 // モデレーターに統合させる
-var specialistSummary = string.Join("\n\n", specialistResponses.Select(kvp => 
+var specialistSummary = string.Join("\n\n", specialistResponses.Select(kvp =>
     $"【{kvp.Key} 専門家の意見】\n{kvp.Value}"));
 
 var specialistsSummaryList = string.Join("\n", selectedSpecialists.Select(s => $"- **{s}**: [要約]"));
@@ -340,15 +359,15 @@ try
 {
     using var moderatorCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
     logger.LogInformation("[Moderator Agent が統合中...]");
-    
+
     // Create a simple workflow with just the moderator
     var moderatorWorkflow = AgentWorkflowBuilder
         .CreateHandoffBuilderWith(moderatorAgent)
         .Build();
-    
+
     var moderatorWorkflowAgent = await moderatorWorkflow.AsAgentAsync("moderator", "Moderator");
     var moderatorThread = moderatorWorkflowAgent.GetNewThread();
-    
+
     var finalResponse = new StringBuilder();
     await foreach (var update in moderatorWorkflowAgent.RunStreamingAsync(moderatorMessages, moderatorThread, cancellationToken: moderatorCts.Token))
     {
@@ -358,7 +377,7 @@ try
             finalResponse.Append(update.Text);
         }
     }
-    
+
     Console.WriteLine("\n");
     logger.LogInformation("最終回答: {FinalResponse}", finalResponse.ToString());
 }

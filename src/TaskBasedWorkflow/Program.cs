@@ -6,10 +6,13 @@ using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -28,10 +31,10 @@ var configuration = new ConfigurationBuilder()
     .Build();
 
 // OpenTelemetry とロギングを設定
-var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"] 
+var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
     ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
 
-var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] 
+var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
     ?? "http://localhost:4317";
 
@@ -41,17 +44,47 @@ using var loggerFactory = LoggerFactory.Create(builder =>
     {
         options.SetResourceBuilder(ResourceBuilder.CreateDefault()
             .AddService("TaskBasedWorkflow"));
-        
+
+        // メッセージテンプレートを展開して送信（読みやすくするため）
+        options.IncludeFormattedMessage = true;
+        options.IncludeScopes = true;
+
         options.AddOtlpExporter(exporterOptions =>
         {
             exporterOptions.Endpoint = new Uri(otlpEndpoint);
         });
-        
-        options.AddConsoleExporter();
+
+        // コンソールにも構造化ログを出力（値を展開）
+        options.AddConsoleExporter(consoleOptions =>
+        {
+            consoleOptions.Targets = OpenTelemetry.Exporter.ConsoleExporterOutputTargets.Console;
+        });
     });
-    
+
+    // SimpleConsoleFormatter を使用して、構造化ログを読みやすく表示
+    builder.AddSimpleConsole(options =>
+    {
+        options.IncludeScopes = true;
+        options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+    });
+
     builder.SetMinimumLevel(LogLevel.Information);
 });
+
+// OpenTelemetry Tracing を設定
+var activitySource = new ActivitySource("TaskBasedWorkflow");
+
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .SetResourceBuilder(ResourceBuilder.CreateDefault()
+        .AddService("TaskBasedWorkflow"))
+    .AddSource("TaskBasedWorkflow")
+    .AddHttpClientInstrumentation()
+    .AddOtlpExporter(exporterOptions =>
+    {
+        exporterOptions.Endpoint = new Uri(otlpEndpoint);
+    })
+    .AddConsoleExporter()
+    .Build();
 
 var logger = loggerFactory.CreateLogger<Program>();
 logger.LogInformation("=== アプリケーション起動 ===");
@@ -136,14 +169,14 @@ string plannerResponse;
 try
 {
     using var plannerCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-    
+
     var plannerWorkflow = AgentWorkflowBuilder
         .CreateHandoffBuilderWith(plannerAgent)
         .Build();
-    
+
     var plannerWorkflowAgent = await plannerWorkflow.AsAgentAsync("planner", "Planner");
     var plannerThread = plannerWorkflowAgent.GetNewThread();
-    
+
     var responseBuilder = new StringBuilder();
     await foreach (var update in plannerWorkflowAgent.RunStreamingAsync(plannerMessages, plannerThread, cancellationToken: plannerCts.Token))
     {
@@ -152,7 +185,7 @@ try
             responseBuilder.Append(update.Text);
         }
     }
-    
+
     plannerResponse = responseBuilder.ToString();
     logger.LogInformation("[Planner の計画]\n{PlannerResponse}", plannerResponse);
 }
@@ -171,7 +204,7 @@ try
     {
         var jsonText = plannerResponse.Substring(jsonStart, jsonEnd - jsonStart + 1);
         var planData = JsonSerializer.Deserialize<JsonElement>(jsonText);
-        
+
         if (planData.TryGetProperty("tasks", out var tasksArray))
         {
             foreach (var taskElement in tasksArray.EnumerateArray())
@@ -187,7 +220,7 @@ try
             }
         }
     }
-    
+
     logger.LogInformation("✓ {TaskCount} 個のタスクを作成しました", taskBoard.Tasks.Count);
 }
 catch (Exception ex)
@@ -228,14 +261,14 @@ foreach (var task in taskBoard.Tasks)
     {
         assignedWorker = "Knowledge";
     }
-    
+
     logger.LogInformation("[Task {TaskId}] {TaskDescription}", task.Id, task.Description);
     logger.LogInformation("担当: {AssignedWorker}", assignedWorker);
     logger.LogInformation("受け入れ基準: {Acceptance}", task.Acceptance);
-    
+
     // タスクをDoingに更新
     taskBoard.AssignTask(task.Id, assignedWorker);
-    
+
     var specialist = specialists[assignedWorker];
     var workerMessages = new List<ChatMessage>
     {
@@ -246,18 +279,18 @@ foreach (var task in taskBoard.Tasks)
 
 このタスクを完了してください。簡潔に回答してください。")
     };
-    
+
     try
     {
         using var workerCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        
+
         var specialistWorkflow = AgentWorkflowBuilder
             .CreateHandoffBuilderWith(specialist)
             .Build();
-        
+
         var specialistWorkflowAgent = await specialistWorkflow.AsAgentAsync(assignedWorker, assignedWorker);
         var specialistThread = specialistWorkflowAgent.GetNewThread();
-        
+
         var resultBuilder = new StringBuilder();
         await foreach (var update in specialistWorkflowAgent.RunStreamingAsync(workerMessages, specialistThread, cancellationToken: workerCts.Token))
         {
@@ -266,12 +299,12 @@ foreach (var task in taskBoard.Tasks)
                 resultBuilder.Append(update.Text);
             }
         }
-        
+
         var result = resultBuilder.ToString();
         taskResults[task.Id] = result;
-        
+
         logger.LogInformation("[{AssignedWorker} の回答]\n{Result}", assignedWorker, result);
-        
+
         // タスクをDoneに更新
         taskBoard.UpdateTaskStatus(task.Id, TaskStatus.Done, "完了");
         logger.LogInformation("✓ Task {TaskId} 完了", task.Id);
@@ -300,16 +333,16 @@ foreach (var task in taskBoard.Tasks)
         TaskStatus.Doing => "🔄",
         _ => "⏳"
     };
-    
+
     logger.LogInformation("{StatusEmoji} [{TaskId}] {TaskDescription}", statusEmoji, task.Id, task.Description);
     logger.LogInformation("   担当: {AssignedTo}", task.AssignedTo ?? "未割当");
     logger.LogInformation("   状態: {Status}", task.Status);
-    
+
     if (taskResults.TryGetValue(task.Id, out var result))
     {
         logger.LogInformation("   結果: {Result}", result.Substring(0, Math.Min(100, result.Length)) + "...");
     }
-    
+
     if (!string.IsNullOrEmpty(task.Notes))
     {
         logger.LogInformation("   備考: {Notes}", task.Notes);
@@ -318,7 +351,7 @@ foreach (var task in taskBoard.Tasks)
 
 var completedTasks = taskBoard.Tasks.Count(t => t.Status == TaskStatus.Done);
 var totalTasks = taskBoard.Tasks.Count;
-logger.LogInformation("完了率: {CompletedTasks}/{TotalTasks} ({CompletionRate:F1}%)", 
+logger.LogInformation("完了率: {CompletedTasks}/{TotalTasks} ({CompletionRate:F1}%)",
     completedTasks, totalTasks, (completedTasks * 100.0 / totalTasks));
 
 logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -395,7 +428,7 @@ public class TaskBoard
     public string TaskId { get; init; } = Guid.NewGuid().ToString("N");
     public string Objective { get; set; } = "";
     public List<TaskItem> Tasks { get; set; } = new();
-    
+
     public void UpdateTaskStatus(string taskId, TaskStatus newStatus, string? notes = null)
     {
         var task = Tasks.FirstOrDefault(t => t.Id == taskId);
@@ -405,7 +438,7 @@ public class TaskBoard
             Tasks[index] = task with { Status = newStatus, Notes = notes };
         }
     }
-    
+
     public void AssignTask(string taskId, string worker)
     {
         var task = Tasks.FirstOrDefault(t => t.Id == taskId);

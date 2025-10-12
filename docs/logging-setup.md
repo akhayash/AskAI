@@ -14,30 +14,95 @@
 
 ### 1. Aspire Dashboard の使用（推奨）
 
-Aspire Dashboard は、.NET Aspire に含まれる軽量なテレメトリダッシュボードです。
+Aspire Dashboard は、.NET Aspire に含まれる軽量なテレメトリダッシュボードです。このプロジェクトでは Docker Compose を使用して管理します。
 
-#### Aspire Dashboard のインストール
+#### Docker Compose による Aspire Dashboard の起動
 
-```bash
-# .NET Aspire をインストール
-dotnet workload install aspire
+プロジェクトルートに `docker-compose.yml` が配置されています。
 
-# または、スタンドアロン版の Aspire Dashboard を Docker で実行
-docker run --rm -it -p 18888:18888 -p 4317:18889 --name aspire-dashboard \
-    mcr.microsoft.com/dotnet/aspire-dashboard:latest
+**docker-compose.yml の内容：**
+
+```yaml
+version: "3.8"
+
+services:
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:8.0
+    container_name: aspire-dashboard
+    ports:
+      - "18888:18888" # Dashboard Web UI
+      - "4317:18889" # OTLP gRPC endpoint
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - DOTNET_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS=true
+    restart: unless-stopped
+```
+
+**起動方法：**
+
+```powershell
+# Dashboard を起動（バックグラウンド実行）
+docker compose up -d
+
+# ログを確認
+docker compose logs -f aspire-dashboard
+
+# 起動状態を確認
+docker compose ps
+
+# 停止
+docker compose down
+```
+
+#### アーキテクチャ
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  GroupChatWorkflow (.NET アプリ)                             │
+│  ┌──────────────────────────────────────┐                   │
+│  │ OpenTelemetry Exporter               │                   │
+│  │ - OTLP/gRPC プロトコル               │                   │
+│  │ - エンドポイント: localhost:4317     │                   │
+│  └──────────────────────────────────────┘                   │
+└────────────────────┬────────────────────────────────────────┘
+                     │ OTLP/gRPC
+                     │ (ログ、トレース、メトリクス)
+                     ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Aspire Dashboard (Docker コンテナ)                          │
+│  ┌──────────────────────────────────────┐                   │
+│  │ OTLP Receiver (ポート 18889)         │                   │
+│  │ ↓                                    │                   │
+│  │ テレメトリ処理・保存                 │                   │
+│  │ ↓                                    │                   │
+│  │ Web UI (ポート 18888)                │                   │
+│  └──────────────────────────────────────┘                   │
+└─────────────────────────────────────────────────────────────┘
+                     ▲
+                     │ HTTP/ブラウザアクセス
+                     │
+              http://localhost:18888
 ```
 
 #### デフォルト設定
 
-環境変数を設定しない場合、デフォルトで `http://localhost:4317` に OTLP データを送信します。
+アプリケーション（`Program.cs`）は、環境変数を設定しない場合、デフォルトで `http://localhost:4317` に OTLP データを送信します。Docker Compose の設定により、このエンドポイントが Aspire Dashboard の OTLP Receiver（内部ポート 18889）にマッピングされます。
 
 #### カスタム OTLP エンドポイントの設定
 
-```bash
-# 環境変数で設定
-export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+異なるエンドポイントを使用する場合：
 
-# または appsettings.Development.json で設定
+```powershell
+# PowerShell で環境変数を設定
+$env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4317"
+
+# アプリを起動
+dotnet run --project src/GroupChatWorkflow
+```
+
+または `appsettings.Development.json` で設定：
+
+```json
 {
   "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"
 }
@@ -45,11 +110,42 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
 
 #### Aspire Dashboard へのアクセス
 
-ブラウザで `http://localhost:18888` を開くと、以下が確認できます：
+1. Docker Compose で Dashboard を起動：
 
-- **Logs**: 構造化されたログメッセージ
-- **Traces**: リクエストの分散トレース
-- **Metrics**: パフォーマンスメトリクス
+   ```powershell
+   docker compose up -d
+   ```
+
+2. ブラウザで `http://localhost:18888` を開く
+
+3. 以下のセクションが利用可能：
+   - **Resources**: アプリケーションリソースの一覧
+   - **Console**: コンソールログ
+   - **Structured**: 構造化ログメッセージ（フィルタリング・検索可能）
+   - **Traces**: リクエストの分散トレース
+   - **Metrics**: パフォーマンスメトリクス
+
+#### 完全なワークフロー
+
+```powershell
+# 1. Dashboard を起動
+docker compose up -d
+
+# 2. Dashboard の起動を確認（ログに "Now listening on: http://[::]:18888" が表示される）
+docker compose logs aspire-dashboard
+
+# 3. 別のターミナルでアプリを起動
+cd C:\Repos\AskAI
+dotnet run --project src/GroupChatWorkflow
+
+# 4. ブラウザで Dashboard を開く
+# http://localhost:18888
+
+# 5. アプリを使用すると、リアルタイムでログ・トレースが Dashboard に表示される
+
+# 6. 終了時は Dashboard を停止
+docker compose down
+```
 
 ### 2. Application Insights の使用
 
@@ -117,26 +213,30 @@ logger.LogInformation($"エンドポイント: {endpoint}");  // ❌
 ### SelectiveGroupChatWorkflow
 
 - サービス名: `SelectiveGroupChatWorkflow`
-- ログ出力: Router、Specialist、Moderator の各フェーズ
+- ログ出力: Router、Specialist、Moderator の各フェーズ、エージェントの発言内容
+- トレーシング: ワークフロー全体と各フェーズ（Router/Specialist/Moderator）の処理時間を Span で追跡
 - 主要メトリクス: 専門家選抜、並列実行時間、統合結果
 
 ### HandoffWorkflow
 
 - サービス名: `HandoffWorkflow`
-- ログ出力: エージェント間のハンドオフ、メッセージ完了
-- 主要メトリクス: ハンドオフ回数、エージェント切り替え回数
+- ログ出力: エージェント間のハンドオフ、各エージェントの発言内容
+- トレーシング: ワークフロー全体と各エージェントの処理時間を Span で追跡
+- 主要メトリクス: ハンドオフ回数、エージェント切り替え回数、メッセージ数
 
 ### TaskBasedWorkflow
 
 - サービス名: `TaskBasedWorkflow`
-- ログ出力: Planner、Worker、結果統合の各フェーズ
-- 主要メトリクス: タスク数、完了率、実行時間
+- ログ出力: Planner、Worker、結果統合の各フェーズ、各タスクの実行内容
+- トレーシング: ワークフロー全体と各フェーズ（Planner/Worker）の処理時間を Span で追跡
+- 主要メトリクス: タスク数、完了率、実行時間、各 Worker の応答時間
 
 ### GroupChatWorkflow
 
 - サービス名: `GroupChatWorkflow`
-- ログ出力: 各エージェントの発言、ラウンド数
-- 主要メトリクス: メッセージ数、議論ラウンド数
+- ログ出力: 各エージェントの発言開始・完了、発言内容全体
+- トレーシング: ワークフロー全体と各エージェントの処理時間を Span で追跡
+- 主要メトリクス: メッセージ数、議論ラウンド数、各エージェントの応答時間
 
 ## トラブルシューティング
 
