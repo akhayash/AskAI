@@ -30,4 +30,7 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AskAI.ServiceDefaults\AskAI.ServiceDefaults.csproj" />
+  </ItemGroup>
 </Project>

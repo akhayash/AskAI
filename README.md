@@ -281,23 +281,34 @@ Negotiation 専門家からは事前準備の重要性、Supplier 専門家か�
 
 詳細は [ロギング設定ガイド](docs/logging-setup.md) を参照してください。
 
-### Aspire Dashboard のクイックスタート
+### Visual Studio での使用（推奨） 🆕
+
+Visual Studio でプロジェクトを実行すると、Aspire Dashboard が自動的に起動します！
+
+1. Visual Studio 2022 (17.9以降) でソリューションを開く
+2. `AskAI.AppHost` をスタートアッププロジェクトに設定
+3. F5 キーで実行
+4. Dashboard が自動的にブラウザで開きます
+
+詳細は [Visual Studio での Aspire 設定ガイド](docs/visual-studio-aspire-setup.md) を参照してください。
+
+### コマンドラインでの使用
 
 ```bash
-# .NET Aspire をインストール
-dotnet workload install aspire
+# AppHost を起動（すべてのワークフローが Dashboard に登録されます）
+cd src/AskAI.AppHost
+dotnet run
 
-# Aspire Dashboard を起動（Docker）
-docker run --rm -it -p 18888:18888 -p 4317:18889 \
-    mcr.microsoft.com/dotnet/aspire-dashboard:latest
-
-# ブラウザで http://localhost:18888 を開く
+# または個別のワークフローを実行
+cd src/SelectiveGroupChatWorkflow
+dotnet run
 ```
 
 ## ドキュメント
 
 - [システム要件定義および基本設計](docs/system-requirements.md)
-- [ロギング設定ガイド](docs/logging-setup.md) 🆕
+- [Visual Studio での Aspire 設定ガイド](docs/visual-studio-aspire-setup.md) 🆕
+- [ロギング設定ガイド](docs/logging-setup.md)
 - [SelectiveGroupChatWorkflow 詳細](src/SelectiveGroupChatWorkflow/README.md)
 
 ## ライセンス
