@@ -1,12 +1,14 @@
 using Azure.AI.OpenAI;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Resources;
 using System.Text;
 using System.Text.Json;
 using ChatRole = Microsoft.Extensions.AI.ChatRole;
@@ -15,21 +17,61 @@ using ChatRole = Microsoft.Extensions.AI.ChatRole;
 Console.OutputEncoding = Encoding.UTF8;
 Console.InputEncoding = Encoding.UTF8;
 
-// Create a host builder with Aspire ServiceDefaults
-var builder = Host.CreateApplicationBuilder(args);
+// 設定を読み込む
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: true)
+    .AddJsonFile("appsettings.Development.json", optional: true)
+    .AddEnvironmentVariables()
+    .Build();
 
-// Add Aspire ServiceDefaults (includes OpenTelemetry configuration)
-builder.AddServiceDefaults();
+// OpenTelemetry とロギングを設定
+var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"] 
+    ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
 
-// Build the host
-using var host = builder.Build();
+var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] 
+    ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
+    ?? "http://localhost:4317"; // Aspire Dashboard デフォルト
 
-// Get logger from DI container
-var logger = host.Services.GetRequiredService<ILoggerFactory>().CreateLogger<Program>();
-var configuration = host.Services.GetRequiredService<IConfiguration>();
+using var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder.AddOpenTelemetry(options =>
+    {
+        options.SetResourceBuilder(ResourceBuilder.CreateDefault()
+            .AddService("SelectiveGroupChatWorkflow"));
+        
+        // Application Insights が設定されている場合
+        if (!string.IsNullOrEmpty(appInsightsConnectionString))
+        {
+            // Azure Monitor Exporter は Trace/Metrics 用なので、ログは OTLP で送信
+            options.AddOtlpExporter(exporterOptions =>
+            {
+                exporterOptions.Endpoint = new Uri(otlpEndpoint);
+            });
+        }
+        else
+        {
+            // Aspire Dashboard に送信
+            options.AddOtlpExporter(exporterOptions =>
+            {
+                exporterOptions.Endpoint = new Uri(otlpEndpoint);
+            });
+        }
+        
+        // コンソールにも出力（開発時に便利）
+        options.AddConsoleExporter();
+    });
+    
+    builder.SetMinimumLevel(LogLevel.Information);
+});
 
+var logger = loggerFactory.CreateLogger<Program>();
 logger.LogInformation("=== アプリケーション起動 ===");
-logger.LogInformation("Aspire ServiceDefaults が有効化されました");
+logger.LogInformation("テレメトリ設定: OTLP Endpoint = {OtlpEndpoint}", otlpEndpoint);
+if (!string.IsNullOrEmpty(appInsightsConnectionString))
+{
+    logger.LogInformation("Application Insights 接続文字列が設定されています");
+}
 
 // 環境変数を設定から取得（appsettings.json → 環境変数の順で優先）
 var endpoint = configuration["environmentVariables:AZURE_OPENAI_ENDPOINT"]
