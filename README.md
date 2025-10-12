@@ -127,6 +127,7 @@ graph TB
 - .NET 8 SDK 以降
 - Azure OpenAI サービスへのアクセス
 - Azure CLI（認証用）
+- （オプション）Aspire Dashboard または Application Insights（テレメトリ用）
 
 ### 環境設定
 
@@ -141,13 +142,23 @@ export AZURE_OPENAI_ENDPOINT="https://your-endpoint.openai.azure.com/"
 export AZURE_OPENAI_DEPLOYMENT_NAME="gpt-4o"
 ```
 
+3. （オプション）テレメトリ設定:
+```bash
+# Aspire Dashboard を使用する場合（推奨）
+export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
+
+# Application Insights を使用する場合
+export APPLICATIONINSIGHTS_CONNECTION_STRING="InstrumentationKey=...;IngestionEndpoint=..."
+```
+
 または、各プロジェクトの `appsettings.Development.json` に設定:
 ```json
 {
   "environmentVariables": {
     "AZURE_OPENAI_ENDPOINT": "https://your-endpoint.openai.azure.com/",
     "AZURE_OPENAI_DEPLOYMENT_NAME": "gpt-4o"
-  }
+  },
+  "OTEL_EXPORTER_OTLP_ENDPOINT": "http://localhost:4317"
 }
 ```
 
@@ -257,10 +268,36 @@ Negotiation 専門家からは事前準備の重要性、Supplier 専門家か�
 - **Microsoft.Extensions.AI**: AI モデル統合
 - **Azure.AI.OpenAI**: Azure OpenAI サービス連携
 - **Azure.Identity**: Azure 認証
+- **OpenTelemetry**: テレメトリとログの統合
+- **Microsoft.Extensions.Logging**: 構造化ロギング
+
+## ロギングとテレメトリ
+
+すべてのワークフローは OpenTelemetry を使用した構造化ロギングをサポートしています。
+
+- **Aspire Dashboard**: 軽量なローカルダッシュボード（推奨）
+- **Application Insights**: Azure のフルマネージドテレメトリサービス
+- **コンソール**: 開発時のリアルタイム出力
+
+詳細は [ロギング設定ガイド](docs/logging-setup.md) を参照してください。
+
+### Aspire Dashboard のクイックスタート
+
+```bash
+# .NET Aspire をインストール
+dotnet workload install aspire
+
+# Aspire Dashboard を起動（Docker）
+docker run --rm -it -p 18888:18888 -p 4317:18889 \
+    mcr.microsoft.com/dotnet/aspire-dashboard:latest
+
+# ブラウザで http://localhost:18888 を開く
+```
 
 ## ドキュメント
 
 - [システム要件定義および基本設計](docs/system-requirements.md)
+- [ロギング設定ガイド](docs/logging-setup.md) 🆕
 - [SelectiveGroupChatWorkflow 詳細](src/SelectiveGroupChatWorkflow/README.md)
 
 ## ライセンス

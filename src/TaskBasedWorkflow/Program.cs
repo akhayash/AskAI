@@ -1,9 +1,14 @@
 using Azure.AI.OpenAI;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Resources;
 using System.Collections.Concurrent;
 using System.Text;
 using System.Text.Json;
@@ -22,6 +27,40 @@ var configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .Build();
 
+// OpenTelemetry とロギングを設定
+var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"] 
+    ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
+
+var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] 
+    ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
+    ?? "http://localhost:4317";
+
+using var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder.AddOpenTelemetry(options =>
+    {
+        options.SetResourceBuilder(ResourceBuilder.CreateDefault()
+            .AddService("TaskBasedWorkflow"));
+        
+        options.AddOtlpExporter(exporterOptions =>
+        {
+            exporterOptions.Endpoint = new Uri(otlpEndpoint);
+        });
+        
+        options.AddConsoleExporter();
+    });
+    
+    builder.SetMinimumLevel(LogLevel.Information);
+});
+
+var logger = loggerFactory.CreateLogger<Program>();
+logger.LogInformation("=== アプリケーション起動 ===");
+logger.LogInformation("テレメトリ設定: OTLP Endpoint = {OtlpEndpoint}", otlpEndpoint);
+if (!string.IsNullOrEmpty(appInsightsConnectionString))
+{
+    logger.LogInformation("Application Insights 接続文字列が設定されています");
+}
+
 // 環境変数を設定から取得
 var endpoint = configuration["environmentVariables:AZURE_OPENAI_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
@@ -31,30 +70,34 @@ var deploymentName = configuration["environmentVariables:AZURE_OPENAI_DEPLOYMENT
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
     ?? throw new InvalidOperationException("AZURE_OPENAI_DEPLOYMENT_NAME is not set");
 
-Console.WriteLine($"Endpoint: {endpoint}");
-Console.WriteLine($"Deployment: {deploymentName}");
+logger.LogInformation("エンドポイント: {Endpoint}", endpoint);
+logger.LogInformation("デプロイメント名: {DeploymentName}", deploymentName);
 
-// Azure OpenAI クライアントを作成
+logger.LogInformation("認証情報の取得中...");
 var credential = new DefaultAzureCredential();
 var openAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
 var chatClient = openAIClient.GetChatClient(deploymentName);
 IChatClient extensionsAIChatClient = chatClient.AsIChatClient();
+logger.LogInformation("認証情報取得完了");
 
+logger.LogInformation("=== Task-Based Workflow デモ ===");
 Console.WriteLine("質問を入力してください (終了するには 'exit' と入力):");
 var question = Console.ReadLine();
 
 if (string.IsNullOrWhiteSpace(question) || question.ToLower() == "exit")
 {
-    Console.WriteLine("終了します。");
+    logger.LogInformation("終了します。");
     return;
 }
+
+logger.LogInformation("受信した質問: {Question}", question);
 
 // タスクボードを初期化
 var taskBoard = new TaskBoard { Objective = question };
 
-Console.WriteLine("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-Console.WriteLine("フェーズ 1: Planner がタスク計画を作成");
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+logger.LogInformation("フェーズ 1: Planner がタスク計画を作成");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 // Planner Agent を作成
 var plannerAgent = CreatePlannerAgent(extensionsAIChatClient);
@@ -111,11 +154,11 @@ try
     }
     
     plannerResponse = responseBuilder.ToString();
-    Console.WriteLine($"[Planner の計画]\n{plannerResponse}\n");
+    logger.LogInformation("[Planner の計画]\n{PlannerResponse}", plannerResponse);
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"❌ Planner エラー: {ex.Message}");
+    logger.LogError(ex, "❌ Planner エラー: {ErrorMessage}", ex.Message);
     return;
 }
 
@@ -145,12 +188,12 @@ try
         }
     }
     
-    Console.WriteLine($"✓ {taskBoard.Tasks.Count} 個のタスクを作成しました\n");
+    logger.LogInformation("✓ {TaskCount} 個のタスクを作成しました", taskBoard.Tasks.Count);
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"⚠️ プラン解析エラー: {ex.Message}");
-    Console.WriteLine("デフォルトタスクを作成します。\n");
+    logger.LogWarning(ex, "⚠️ プラン解析エラー: {ErrorMessage}", ex.Message);
+    logger.LogInformation("デフォルトタスクを作成します。");
     taskBoard.Tasks.Add(new TaskItem(
         "task-1",
         question,
@@ -160,9 +203,9 @@ catch (Exception ex)
     ));
 }
 
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-Console.WriteLine("フェーズ 2: Worker がタスクを実行");
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+logger.LogInformation("フェーズ 2: Worker がタスクを実行");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 // 専門家エージェントを作成
 var specialists = new Dictionary<string, ChatClientAgent>
@@ -186,9 +229,9 @@ foreach (var task in taskBoard.Tasks)
         assignedWorker = "Knowledge";
     }
     
-    Console.WriteLine($"[Task {task.Id}] {task.Description}");
-    Console.WriteLine($"担当: {assignedWorker}");
-    Console.WriteLine($"受け入れ基準: {task.Acceptance}\n");
+    logger.LogInformation("[Task {TaskId}] {TaskDescription}", task.Id, task.Description);
+    logger.LogInformation("担当: {AssignedWorker}", assignedWorker);
+    logger.LogInformation("受け入れ基準: {Acceptance}", task.Acceptance);
     
     // タスクをDoingに更新
     taskBoard.AssignTask(task.Id, assignedWorker);
@@ -227,26 +270,26 @@ foreach (var task in taskBoard.Tasks)
         var result = resultBuilder.ToString();
         taskResults[task.Id] = result;
         
-        Console.WriteLine($"[{assignedWorker} の回答]\n{result}\n");
+        logger.LogInformation("[{AssignedWorker} の回答]\n{Result}", assignedWorker, result);
         
         // タスクをDoneに更新
         taskBoard.UpdateTaskStatus(task.Id, TaskStatus.Done, "完了");
-        Console.WriteLine($"✓ Task {task.Id} 完了\n");
+        logger.LogInformation("✓ Task {TaskId} 完了", task.Id);
     }
     catch (Exception ex)
     {
-        Console.WriteLine($"❌ {assignedWorker} のエラー: {ex.Message}\n");
+        logger.LogError(ex, "❌ {AssignedWorker} のエラー: {ErrorMessage}", assignedWorker, ex.Message);
         taskBoard.UpdateTaskStatus(task.Id, TaskStatus.Blocked, $"エラー: {ex.Message}");
     }
 }
 
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-Console.WriteLine("フェーズ 3: 結果の統合");
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+logger.LogInformation("フェーズ 3: 結果の統合");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 // 最終結果を表示
-Console.WriteLine($"## 目標: {taskBoard.Objective}\n");
-Console.WriteLine("## タスク実行結果:\n");
+logger.LogInformation("## 目標: {Objective}", taskBoard.Objective);
+logger.LogInformation("## タスク実行結果:");
 
 foreach (var task in taskBoard.Tasks)
 {
@@ -258,33 +301,34 @@ foreach (var task in taskBoard.Tasks)
         _ => "⏳"
     };
     
-    Console.WriteLine($"{statusEmoji} [{task.Id}] {task.Description}");
-    Console.WriteLine($"   担当: {task.AssignedTo ?? "未割当"}");
-    Console.WriteLine($"   状態: {task.Status}");
+    logger.LogInformation("{StatusEmoji} [{TaskId}] {TaskDescription}", statusEmoji, task.Id, task.Description);
+    logger.LogInformation("   担当: {AssignedTo}", task.AssignedTo ?? "未割当");
+    logger.LogInformation("   状態: {Status}", task.Status);
     
     if (taskResults.TryGetValue(task.Id, out var result))
     {
-        Console.WriteLine($"   結果: {result.Substring(0, Math.Min(100, result.Length))}...");
+        logger.LogInformation("   結果: {Result}", result.Substring(0, Math.Min(100, result.Length)) + "...");
     }
     
     if (!string.IsNullOrEmpty(task.Notes))
     {
-        Console.WriteLine($"   備考: {task.Notes}");
+        logger.LogInformation("   備考: {Notes}", task.Notes);
     }
-    
-    Console.WriteLine();
 }
 
 var completedTasks = taskBoard.Tasks.Count(t => t.Status == TaskStatus.Done);
 var totalTasks = taskBoard.Tasks.Count;
-Console.WriteLine($"完了率: {completedTasks}/{totalTasks} ({(completedTasks * 100.0 / totalTasks):F1}%)");
+logger.LogInformation("完了率: {CompletedTasks}/{TotalTasks} ({CompletionRate:F1}%)", 
+    completedTasks, totalTasks, (completedTasks * 100.0 / totalTasks));
 
-Console.WriteLine("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-Console.WriteLine("ワークフロー完了");
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+logger.LogInformation("ワークフロー完了");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-Console.WriteLine("Enter キーを押して終了してください...");
+Console.WriteLine("\nEnter キーを押して終了してください...");
 Console.ReadLine();
+
+logger.LogInformation("=== アプリケーション終了 ===");
 
 static ChatClientAgent CreatePlannerAgent(IChatClient chatClient)
 {
