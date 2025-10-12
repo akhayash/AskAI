@@ -1,9 +1,14 @@
 using Azure.AI.OpenAI;
 using Azure.Identity;
+using Azure.Monitor.OpenTelemetry.Exporter;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Resources;
 using System.Text;
 using System.Text.Json;
 using ChatRole = Microsoft.Extensions.AI.ChatRole;
@@ -20,6 +25,54 @@ var configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .Build();
 
+// OpenTelemetry とロギングを設定
+var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"] 
+    ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
+
+var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"] 
+    ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
+    ?? "http://localhost:4317"; // Aspire Dashboard デフォルト
+
+using var loggerFactory = LoggerFactory.Create(builder =>
+{
+    builder.AddOpenTelemetry(options =>
+    {
+        options.SetResourceBuilder(ResourceBuilder.CreateDefault()
+            .AddService("SelectiveGroupChatWorkflow"));
+        
+        // Application Insights が設定されている場合
+        if (!string.IsNullOrEmpty(appInsightsConnectionString))
+        {
+            // Azure Monitor Exporter は Trace/Metrics 用なので、ログは OTLP で送信
+            options.AddOtlpExporter(exporterOptions =>
+            {
+                exporterOptions.Endpoint = new Uri(otlpEndpoint);
+            });
+        }
+        else
+        {
+            // Aspire Dashboard に送信
+            options.AddOtlpExporter(exporterOptions =>
+            {
+                exporterOptions.Endpoint = new Uri(otlpEndpoint);
+            });
+        }
+        
+        // コンソールにも出力（開発時に便利）
+        options.AddConsoleExporter();
+    });
+    
+    builder.SetMinimumLevel(LogLevel.Information);
+});
+
+var logger = loggerFactory.CreateLogger<Program>();
+logger.LogInformation("=== アプリケーション起動 ===");
+logger.LogInformation("テレメトリ設定: OTLP Endpoint = {OtlpEndpoint}", otlpEndpoint);
+if (!string.IsNullOrEmpty(appInsightsConnectionString))
+{
+    logger.LogInformation("Application Insights 接続文字列が設定されています");
+}
+
 // 環境変数を設定から取得（appsettings.json → 環境変数の順で優先）
 var endpoint = configuration["environmentVariables:AZURE_OPENAI_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
@@ -29,10 +82,10 @@ var deployment = configuration["environmentVariables:AZURE_OPENAI_DEPLOYMENT_NAM
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
     ?? throw new InvalidOperationException("環境変数 AZURE_OPENAI_DEPLOYMENT_NAME が設定されていません。");
 
-Console.WriteLine($"エンドポイント: {endpoint}");
-Console.WriteLine($"デプロイメント名: {deployment}");
+logger.LogInformation("エンドポイント: {Endpoint}", endpoint);
+logger.LogInformation("デプロイメント名: {DeploymentName}", deployment);
 
-Console.WriteLine("\n認証情報の取得中（Azure CLI のみを使用）...");
+logger.LogInformation("認証情報の取得中（Azure CLI のみを使用）...");
 var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
 {
     ExcludeEnvironmentCredential = true,
@@ -46,22 +99,24 @@ var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
     ExcludeInteractiveBrowserCredential = true,
     ExcludeWorkloadIdentityCredential = true
 });
-Console.WriteLine("認証情報取得完了");
+logger.LogInformation("認証情報取得完了");
 
 var openAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
 var chatClient = openAIClient.GetChatClient(deployment);
 IChatClient extensionsAIChatClient = chatClient.AsIChatClient();
 
-Console.WriteLine("\n=== Selective Group Chat Workflow デモ ===");
+logger.LogInformation("=== Selective Group Chat Workflow デモ ===");
 Console.WriteLine("質問を入力してください。");
 Console.Write("質問> ");
 var question = Console.ReadLine();
 
 if (string.IsNullOrWhiteSpace(question))
 {
-    Console.WriteLine("質問が空です。");
+    logger.LogWarning("質問が空です。");
     return;
 }
+
+logger.LogInformation("受信した質問: {Question}", question);
 
 // ルーターエージェントを作成（専門家を選抜）
 var routerAgent = CreateRouterAgent(extensionsAIChatClient);
@@ -80,9 +135,9 @@ var specialists = new Dictionary<string, ChatClientAgent>
 // モデレーターエージェントを作成（専門家の回答を統合）
 var moderatorAgent = CreateModeratorAgent(extensionsAIChatClient);
 
-Console.WriteLine("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-Console.WriteLine("フェーズ 1: ルーターが必要な専門家を選抜");
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+logger.LogInformation("フェーズ 1: ルーターが必要な専門家を選抜");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 // ルーターに専門家を選抜させる
 var routerMessages = new List<ChatMessage>
@@ -126,11 +181,11 @@ try
     }
     
     routerResponse = responseBuilder.ToString();
-    Console.WriteLine($"[Router Agent の判断]\n{routerResponse}\n");
+    logger.LogInformation("[Router Agent の判断]\n{RouterResponse}", routerResponse);
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"❌ ルーター実行エラー: {ex.Message}");
+    logger.LogError(ex, "❌ ルーター実行エラー: {ErrorMessage}", ex.Message);
     return;
 }
 
@@ -170,25 +225,25 @@ try
     
     if (selectedSpecialists.Count == 0)
     {
-        Console.WriteLine("⚠️ 専門家が選抜されませんでした。Knowledge 専門家をデフォルトで使用します。");
+        logger.LogWarning("⚠️ 専門家が選抜されませんでした。Knowledge 専門家をデフォルトで使用します。");
         selectedSpecialists = new List<string> { "Knowledge" };
         selectionReason = "フォールバック: デフォルト選抜";
     }
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"⚠️ ルーター応答のパースエラー: {ex.Message}");
-    Console.WriteLine("Knowledge 専門家をデフォルトで使用します。");
+    logger.LogWarning(ex, "⚠️ ルーター応答のパースエラー: {ErrorMessage}", ex.Message);
+    logger.LogInformation("Knowledge 専門家をデフォルトで使用します。");
     selectedSpecialists = new List<string> { "Knowledge" };
     selectionReason = "フォールバック: パースエラー";
 }
 
-Console.WriteLine($"✓ 選抜された専門家: {string.Join(", ", selectedSpecialists)}");
-Console.WriteLine($"✓ 選抜理由: {selectionReason}\n");
+logger.LogInformation("✓ 選抜された専門家: {SelectedSpecialists}", string.Join(", ", selectedSpecialists));
+logger.LogInformation("✓ 選抜理由: {SelectionReason}", selectionReason);
 
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-Console.WriteLine("フェーズ 2: 選抜された専門家が並列で意見を提供");
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+logger.LogInformation("フェーズ 2: 選抜された専門家が並列で意見を提供");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 // 選抜された専門家からの応答を収集
 var specialistResponses = new Dictionary<string, string>();
@@ -229,14 +284,14 @@ var specialistTasks = selectedSpecialists
             }
             
             var opinion = opinionBuilder.ToString();
-            Console.WriteLine($"[{specialistName} Agent の意見]");
-            Console.WriteLine($"{opinion}\n");
+            logger.LogInformation("[{SpecialistName} Agent の意見]", specialistName);
+            logger.LogInformation("{Opinion}", opinion);
             
             return (specialistName, opinion);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"❌ {specialistName} エージェントのエラー: {ex.Message}\n");
+            logger.LogError(ex, "❌ {SpecialistName} エージェントのエラー: {ErrorMessage}", specialistName, ex.Message);
             return (specialistName, $"エラー: {ex.Message}");
         }
     });
@@ -247,9 +302,9 @@ foreach (var result in results)
     specialistResponses[result.Item1] = result.Item2;
 }
 
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-Console.WriteLine("フェーズ 3: モデレーターが専門家の意見を統合");
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+logger.LogInformation("フェーズ 3: モデレーターが専門家の意見を統合");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 // モデレーターに統合させる
 var specialistSummary = string.Join("\n\n", specialistResponses.Select(kvp => 
@@ -284,7 +339,7 @@ var moderatorMessages = new List<ChatMessage>
 try
 {
     using var moderatorCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-    Console.WriteLine("[Moderator Agent が統合中...]\n");
+    logger.LogInformation("[Moderator Agent が統合中...]");
     
     // Create a simple workflow with just the moderator
     var moderatorWorkflow = AgentWorkflowBuilder
@@ -294,27 +349,32 @@ try
     var moderatorWorkflowAgent = await moderatorWorkflow.AsAgentAsync("moderator", "Moderator");
     var moderatorThread = moderatorWorkflowAgent.GetNewThread();
     
+    var finalResponse = new StringBuilder();
     await foreach (var update in moderatorWorkflowAgent.RunStreamingAsync(moderatorMessages, moderatorThread, cancellationToken: moderatorCts.Token))
     {
         if (!string.IsNullOrEmpty(update.Text))
         {
             Console.Write(update.Text);
+            finalResponse.Append(update.Text);
         }
     }
     
     Console.WriteLine("\n");
+    logger.LogInformation("最終回答: {FinalResponse}", finalResponse.ToString());
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"\n❌ モデレーターエラー: {ex.Message}");
+    logger.LogError(ex, "❌ モデレーターエラー: {ErrorMessage}", ex.Message);
 }
 
-Console.WriteLine("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-Console.WriteLine("ワークフロー完了");
-Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+logger.LogInformation("ワークフロー完了");
+logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-Console.WriteLine("Enter キーを押して終了してください...");
+Console.WriteLine("\nEnter キーを押して終了してください...");
 Console.ReadLine();
+
+logger.LogInformation("=== アプリケーション終了 ===");
 
 static ChatClientAgent CreateRouterAgent(IChatClient chatClient)
 {
