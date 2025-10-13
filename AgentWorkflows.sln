@@ -15,6 +15,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TaskBasedWorkflow", "src\Ta
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DynamicGroupChatWorkflow", "src\DynamicGroupChatWorkflow\DynamicGroupChatWorkflow.csproj", "{D2998453-9FB9-4819-B520-DF1557A59450}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GraphExecutorWorkflow", "src\GraphExecutorWorkflow\GraphExecutorWorkflow.csproj", "{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -85,6 +87,18 @@ Global
 		{D2998453-9FB9-4819-B520-DF1557A59450}.Release|x64.Build.0 = Release|Any CPU
 		{D2998453-9FB9-4819-B520-DF1557A59450}.Release|x86.ActiveCfg = Release|Any CPU
 		{D2998453-9FB9-4819-B520-DF1557A59450}.Release|x86.Build.0 = Release|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Debug|x64.Build.0 = Debug|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Debug|x86.Build.0 = Debug|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Release|Any CPU.Build.0 = Release|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Release|x64.ActiveCfg = Release|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Release|x64.Build.0 = Release|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Release|x86.ActiveCfg = Release|Any CPU
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -95,5 +109,6 @@ Global
 		{59AC5469-7457-4E49-9388-0037495CFCC2} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{22AD439A-B744-4923-871F-4789B92475F1} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{D2998453-9FB9-4819-B520-DF1557A59450} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{9D64D6F4-B1C9-44D0-9178-74CADBE7AE29} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
