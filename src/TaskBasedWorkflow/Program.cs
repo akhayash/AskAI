@@ -13,6 +13,7 @@ using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -107,7 +108,7 @@ logger.LogInformation("エンドポイント: {Endpoint}", endpoint);
 logger.LogInformation("デプロイメント名: {DeploymentName}", deploymentName);
 
 logger.LogInformation("認証情報の取得中...");
-var credential = new DefaultAzureCredential();
+var credential = new AzureCliCredential();
 var openAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
 var chatClient = openAIClient.GetChatClient(deploymentName);
 IChatClient extensionsAIChatClient = chatClient.AsIChatClient();
@@ -166,6 +167,11 @@ var plannerMessages = new List<ChatMessage>
 };
 
 string plannerResponse;
+using var plannerActivity = activitySource.StartActivity("Agent.Planner", ActivityKind.Internal);
+plannerActivity?.SetTag("agent.name", "Planner");
+plannerActivity?.SetTag("agent.role", "Planner");
+plannerActivity?.SetTag("workflow.objective", taskBoard.Objective);
+
 try
 {
     using var plannerCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -187,10 +193,13 @@ try
     }
 
     plannerResponse = responseBuilder.ToString();
+    plannerActivity?.SetTag("agent.response.length", plannerResponse.Length);
     logger.LogInformation("[Planner の計画]\n{PlannerResponse}", plannerResponse);
 }
 catch (Exception ex)
 {
+    plannerActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+    plannerActivity?.SetTag("agent.error", ex.Message);
     logger.LogError(ex, "❌ Planner エラー: {ErrorMessage}", ex.Message);
     return;
 }
@@ -225,6 +234,7 @@ try
 }
 catch (Exception ex)
 {
+    plannerActivity?.SetTag("plan.parseError", ex.Message);
     logger.LogWarning(ex, "⚠️ プラン解析エラー: {ErrorMessage}", ex.Message);
     logger.LogInformation("デフォルトタスクを作成します。");
     taskBoard.Tasks.Add(new TaskItem(
@@ -235,6 +245,9 @@ catch (Exception ex)
         "Knowledge"
     ));
 }
+
+plannerActivity?.SetTag("plan.tasks.count", taskBoard.Tasks.Count);
+plannerActivity?.SetStatus(ActivityStatusCode.Ok);
 
 logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 logger.LogInformation("フェーズ 2: Worker がタスクを実行");
@@ -254,7 +267,7 @@ var specialists = new Dictionary<string, ChatClientAgent>
 // タスクを順次実行
 var taskResults = new Dictionary<string, string>();
 
-foreach (var task in taskBoard.Tasks)
+foreach (var task in taskBoard.Tasks.ToList())
 {
     var assignedWorker = task.AssignedTo ?? "Knowledge";
     if (!specialists.ContainsKey(assignedWorker))
@@ -262,12 +275,21 @@ foreach (var task in taskBoard.Tasks)
         assignedWorker = "Knowledge";
     }
 
+    using var workerActivity = activitySource.StartActivity($"Agent.{assignedWorker}", ActivityKind.Internal);
+    workerActivity?.SetTag("agent.name", assignedWorker);
+    workerActivity?.SetTag("agent.role", "Worker");
+    workerActivity?.SetTag("workflow.objective", taskBoard.Objective);
+    workerActivity?.SetTag("task.id", task.Id);
+    workerActivity?.SetTag("task.description", task.Description);
+    workerActivity?.SetTag("task.acceptance", task.Acceptance);
+
     logger.LogInformation("[Task {TaskId}] {TaskDescription}", task.Id, task.Description);
     logger.LogInformation("担当: {AssignedWorker}", assignedWorker);
     logger.LogInformation("受け入れ基準: {Acceptance}", task.Acceptance);
 
     // タスクをDoingに更新
     taskBoard.AssignTask(task.Id, assignedWorker);
+    workerActivity?.SetTag("task.status", TaskStatus.Doing.ToString());
 
     var specialist = specialists[assignedWorker];
     var workerMessages = new List<ChatMessage>
@@ -305,14 +327,21 @@ foreach (var task in taskBoard.Tasks)
 
         logger.LogInformation("[{AssignedWorker} の回答]\n{Result}", assignedWorker, result);
 
+        workerActivity?.SetTag("agent.response.length", result.Length);
+
         // タスクをDoneに更新
         taskBoard.UpdateTaskStatus(task.Id, TaskStatus.Done, "完了");
+        workerActivity?.SetTag("task.status", TaskStatus.Done.ToString());
+        workerActivity?.SetStatus(ActivityStatusCode.Ok);
         logger.LogInformation("✓ Task {TaskId} 完了", task.Id);
     }
     catch (Exception ex)
     {
         logger.LogError(ex, "❌ {AssignedWorker} のエラー: {ErrorMessage}", assignedWorker, ex.Message);
         taskBoard.UpdateTaskStatus(task.Id, TaskStatus.Blocked, $"エラー: {ex.Message}");
+        workerActivity?.SetTag("task.status", TaskStatus.Blocked.ToString());
+        workerActivity?.SetTag("agent.error", ex.Message);
+        workerActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
     }
 }
 
@@ -340,7 +369,7 @@ foreach (var task in taskBoard.Tasks)
 
     if (taskResults.TryGetValue(task.Id, out var result))
     {
-        logger.LogInformation("   結果: {Result}", result.Substring(0, Math.Min(100, result.Length)) + "...");
+        logger.LogInformation("   結果概要: {ResultSnippet}", new string(result.Take(80).ToArray()) + (result.Length > 80 ? "..." : string.Empty));
     }
 
     if (!string.IsNullOrEmpty(task.Notes))
@@ -353,6 +382,103 @@ var completedTasks = taskBoard.Tasks.Count(t => t.Status == TaskStatus.Done);
 var totalTasks = taskBoard.Tasks.Count;
 logger.LogInformation("完了率: {CompletedTasks}/{TotalTasks} ({CompletionRate:F1}%)",
     completedTasks, totalTasks, (completedTasks * 100.0 / totalTasks));
+
+if (taskResults.Count > 0)
+{
+    using var summaryActivity = activitySource.StartActivity("Agent.Summary", ActivityKind.Internal);
+    summaryActivity?.SetTag("agent.name", "Summary");
+    summaryActivity?.SetTag("agent.role", "Coordinator");
+    summaryActivity?.SetTag("workflow.objective", taskBoard.Objective);
+
+    var summaryAgent = CreateSummaryAgent(extensionsAIChatClient);
+    var summaryPayload = taskBoard.Tasks.Select(t => new
+    {
+        t.Id,
+        t.Description,
+        Acceptance = t.Acceptance,
+        AssignedTo = t.AssignedTo ?? "未割当",
+        Status = t.Status.ToString(),
+        Result = taskResults.TryGetValue(t.Id, out var r) ? r : null
+    });
+
+    var summaryJson = JsonSerializer.Serialize(summaryPayload, new JsonSerializerOptions
+    {
+        WriteIndented = true
+    });
+
+    var summaryMessages = new List<ChatMessage>
+    {
+        new ChatMessage(ChatRole.User, $@"目標: {taskBoard.Objective}
+
+タスク結果一覧:
+{summaryJson}
+
+上記の情報を統合し、以下の形式で簡潔にまとめてください:
+
+### 最終回答
+- ...
+- ...
+- ...
+
+### 要約
+- ...
+- ...
+- ...
+
+### 詳細
+- {{task-id}} (担当: ...): ...
+
+### 主要リスク
+- ...
+- ...
+- ...
+
+### 推奨アクション
+- ...
+- ...
+- ...
+
+### 参考回答
+- {{task-id}}:
+    ```
+    <回答全文>
+    ```
+
+箇条書きは3項目前後を目安にし、重複を避けてください。")
+    };
+
+    try
+    {
+        using var summaryCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+
+        var summaryWorkflow = AgentWorkflowBuilder
+            .CreateHandoffBuilderWith(summaryAgent)
+            .Build();
+
+        var summaryWorkflowAgent = await summaryWorkflow.AsAgentAsync("summary", "Summary");
+        var summaryThread = summaryWorkflowAgent.GetNewThread();
+
+        var summaryBuilder = new StringBuilder();
+        await foreach (var update in summaryWorkflowAgent.RunStreamingAsync(summaryMessages, summaryThread, cancellationToken: summaryCts.Token))
+        {
+            if (!string.IsNullOrEmpty(update.Text))
+            {
+                summaryBuilder.Append(update.Text);
+            }
+        }
+
+        var summaryText = summaryBuilder.ToString();
+        summaryActivity?.SetTag("agent.response.length", summaryText.Length);
+        summaryActivity?.SetStatus(ActivityStatusCode.Ok);
+        logger.LogInformation("統合要約:\n{Summary}", summaryText);
+    }
+    catch (Exception ex)
+    {
+        summaryActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+        summaryActivity?.SetTag("agent.error", ex.Message);
+        logger.LogWarning(ex, "⚠️ サマリー統合に失敗しました: {Message}", ex.Message);
+    }
+}
 
 logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 logger.LogInformation("ワークフロー完了");
@@ -408,6 +534,69 @@ static ChatClientAgent CreateSpecialistAgent(IChatClient chatClient, string spec
         instructions,
         $"{specialty.ToLower()}_agent",
         $"{specialty} Agent");
+}
+
+static ChatClientAgent CreateSummaryAgent(IChatClient chatClient)
+{
+    var instructions = """
+あなたはタスクベースワークフローの調整役です。
+提供された各タスクの結果を読み、重複を取り除きながら全体像を要約します。
+
+必ず以下のテンプレートに厳密に従ってください（見出し名・順序は変更不可）。箇条書きの行頭には必ず "- " を付けます。
+
+### 最終回答
+- ...
+- ...
+- ...
+
+### 要約
+- ...
+- ...
+- ...
+
+### 詳細
+- {task-id} (担当: ...): ...
+- {task-id} (担当: ...): ...
+- {task-id} (担当: ...): ...
+
+### 主要リスク
+- ...
+- ...
+- ...
+
+### 推奨アクション
+- ...
+- ...
+- ...
+
+### 参考回答
+- {task-id}:
+    ```
+    <回答全文>
+    ```
+- {task-id}:
+    ```
+    <回答全文>
+    ```
+- {task-id}:
+    ```
+    <回答全文>
+    ```
+
+- 「要約」では全体像を3項目前後で示してください。3項目未満の場合は "- 該当なし" を使います。
+- 「最終回答」では質問に対する直接的かつ実行可能な回答を3項目前後で示し、すべての内容が各エージェントの出力を根拠とすることを明確にしてください。3項目未満の場合は "- 該当なし" を使います。
+- 「詳細」ではタスクID順にすべてのタスクを列挙し、担当者と結果の要点を一文でまとめます（必要に応じて行数を増やしてかまいません）。
+- 「主要リスク」と「推奨アクション」もそれぞれ3項目前後を目安にし、施策や洞察が重複しないようにしてください。該当項目が少ない場合は "- 該当なし" を使います。
+- 「参考回答」では各タスクの回答全文をコードブロック (```) で囲んで順番に掲載します（必要に応じて行数を増やし、回答がない場合はコードブロック内に "該当なし" と記載します）。
+- 上記テンプレートの {task-id} は入力で提供された実際のタスクIDに置き換え、テンプレート行は必要なぶんだけ繰り返してください。
+- 明確で実行可能な表現を用い、日本語で出力します。
+""";
+
+    return new ChatClientAgent(
+        chatClient,
+        instructions,
+        "summary_agent",
+        "Summary Agent");
 }
 
 #region Domain
