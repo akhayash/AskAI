@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -61,13 +62,10 @@ public static class Program
             .AsIChatClient();
 
         logger.LogInformation("=== Graph Executor Workflow デモ ===");
-        Console.WriteLine("=== Graph Executor Workflow デモ ===");
-        Console.WriteLine();
-        Console.WriteLine("このワークフローは以下のフローを実装しています:");
-        Console.WriteLine("1. Router Executor: ユーザー質問から必要な専門家を特定");
-        Console.WriteLine("2. Specialist Executors: 各専門家が並列で意見を生成");
-        Console.WriteLine("3. Aggregator Executor: 意見を集約し最終出力");
-        Console.WriteLine();
+        logger.LogInformation("このワークフローは以下のフローを実装しています:");
+        logger.LogInformation("1. Router Executor: ユーザー質問から必要な専門家を特定");
+        logger.LogInformation("2. Specialist Executors: 各専門家が並列で意見を生成");
+        logger.LogInformation("3. Aggregator Executor: 意見を集約し最終出力");
 
         // Create agents for each executor
         AIAgent routerAgent = GetRouterAgent(chatClient);
@@ -78,6 +76,11 @@ public static class Program
         AIAgent knowledgeAgent = GetSpecialistAgent(chatClient, "Knowledge", "知識管理");
         AIAgent supplierAgent = GetSpecialistAgent(chatClient, "Supplier", "サプライヤー管理");
         AIAgent aggregatorAgent = GetAggregatorAgent(chatClient);
+
+        // Set logger for executors
+        RouterExecutor.SetLogger(logger);
+        SpecialistExecutor.SetLogger(logger);
+        AggregatorExecutor.SetLogger(logger);
 
         // Create executors
         var routerExecutor = new RouterExecutor(routerAgent);
@@ -117,22 +120,10 @@ public static class Program
 
         // Output workflow visualization using Mermaid and DOT
         logger.LogInformation("ワークフローグラフを可視化中...");
-        Console.WriteLine();
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine("ワークフローグラフ (Mermaid形式):");
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         var mermaidString = workflow.ToMermaidString();
-        Console.WriteLine(mermaidString);
-        logger.LogInformation("Mermaid 図:\n{Mermaid}", mermaidString);
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine();
-        Console.WriteLine("ワークフローグラフ (DOT/Graphviz形式):");
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        logger.LogInformation("ワークフローグラフ (Mermaid形式):\n{Mermaid}", mermaidString);
         var dotString = workflow.ToDotString();
-        Console.WriteLine(dotString);
-        logger.LogInformation("DOT 図:\n{Dot}", dotString);
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine();
+        logger.LogInformation("ワークフローグラフ (DOT/Graphviz形式):\n{Dot}", dotString);
 
         // Get user input
         Console.Write("質問> ");
@@ -141,22 +132,16 @@ public static class Program
         if (string.IsNullOrWhiteSpace(question))
         {
             logger.LogWarning("質問が空です。");
-            Console.WriteLine("質問が空です。");
             return;
         }
 
         logger.LogInformation("受信した質問: {Question}", question);
+        logger.LogInformation("ワークフロー実行開始");
 
-        Console.WriteLine();
-        logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        logger.LogInformation("ワークフロー実行中...");
-        logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine("ワークフロー実行中...");
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine();
+        // Execute the workflow with tracing
+        using var workflowActivity = activitySource.StartActivity("WorkflowExecution");
+        workflowActivity?.SetTag("question", question);
 
-        // Execute the workflow
         await using StreamingRun run = await InProcessExecution.StreamAsync(
             workflow, 
             new ChatMessage(ChatRole.User, question)
@@ -167,27 +152,21 @@ public static class Program
         {
             if (evt is WorkflowOutputEvent outputEvent)
             {
-                Console.WriteLine($"{outputEvent}");
+                logger.LogInformation("ワークフロー出力: {Output}", outputEvent.ToString());
             }
             else if (evt is SpecialistEvent specialistEvent)
             {
-                Console.WriteLine($"[{specialistEvent.SpecialistName}] {specialistEvent.Message}");
+                logger.LogInformation("[{Specialist}] {Message}", specialistEvent.SpecialistName, specialistEvent.Message);
             }
             else if (evt is RouterEvent routerEvent)
             {
-                Console.WriteLine($"[Router] {routerEvent.Message}");
+                logger.LogInformation("[Router] {Message}", routerEvent.Message);
             }
         }
 
-        Console.WriteLine();
-        logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         logger.LogInformation("ワークフロー完了");
-        logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine("ワークフロー完了");
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine();
-        Console.WriteLine("Enter キーを押して終了してください...");
+        
+        Console.WriteLine("\nEnter キーを押して終了してください...");
         Console.ReadLine();
 
         logger.LogInformation("=== アプリケーション終了 ===");
@@ -422,14 +401,27 @@ internal sealed class SpecialistEvent : WorkflowEvent
 internal sealed class RouterExecutor : ReflectingExecutor<RouterExecutor>, IMessageHandler<ChatMessage, RouterDecision>
 {
     private readonly AIAgent _routerAgent;
+    private static readonly ActivitySource _activitySource = new ActivitySource("GraphExecutorWorkflow");
+    private static ILogger? _logger;
 
     public RouterExecutor(AIAgent routerAgent) : base("RouterExecutor")
     {
         _routerAgent = routerAgent;
     }
 
+    public static void SetLogger(ILogger logger)
+    {
+        _logger = logger;
+    }
+
     public async ValueTask<RouterDecision> HandleAsync(ChatMessage message, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
+        using var activity = _activitySource.StartActivity("RouterExecutor.Handle");
+        activity?.SetTag("executor.type", "router");
+        activity?.SetTag("message.text", message.Text);
+        
+        _logger?.LogInformation("RouterExecutor: 処理開始 - 質問: {Question}", message.Text);
+
         // Store the question
         var question = new Question
         {
@@ -439,7 +431,10 @@ internal sealed class RouterExecutor : ReflectingExecutor<RouterExecutor>, IMess
         await context.QueueStateUpdateAsync(question.QuestionId, question, scopeName: WorkflowStateConstants.QuestionStateScope, cancellationToken);
 
         // Invoke the router agent
+        _logger?.LogInformation("RouterExecutor: エージェント呼び出し中...");
         var response = await _routerAgent.RunAsync(message, cancellationToken: cancellationToken);
+        _logger?.LogInformation("RouterExecutor: エージェント応答: {Response}", response.Text);
+        
         var routerDecision = JsonSerializer.Deserialize<RouterDecision>(response.Text);
 
         if (routerDecision is null || routerDecision.Selected.Count == 0)
@@ -449,10 +444,17 @@ internal sealed class RouterExecutor : ReflectingExecutor<RouterExecutor>, IMess
                 Selected = new List<string> { "Knowledge" },
                 Reason = "デフォルト選抜: 明確な専門領域が特定できませんでした。"
             };
+            _logger?.LogWarning("RouterExecutor: デフォルト選抜を使用");
         }
 
         // Set the question ID
         routerDecision.QuestionId = question.QuestionId;
+
+        activity?.SetTag("selected.specialists", string.Join(", ", routerDecision.Selected));
+        activity?.SetTag("selection.reason", routerDecision.Reason);
+        
+        _logger?.LogInformation("RouterExecutor: 選抜完了 - 専門家: {Specialists}, 理由: {Reason}", 
+            string.Join(", ", routerDecision.Selected), routerDecision.Reason);
 
         // Emit event
         await context.AddEventAsync(
@@ -471,6 +473,8 @@ internal sealed class SpecialistExecutor : ReflectingExecutor<SpecialistExecutor
 {
     private readonly AIAgent _specialistAgent;
     private readonly string _specialistName;
+    private static readonly ActivitySource _activitySource = new ActivitySource("GraphExecutorWorkflow");
+    private static ILogger? _logger;
 
     public SpecialistExecutor(AIAgent specialistAgent, string specialistName) : base($"{specialistName}Executor")
     {
@@ -478,9 +482,20 @@ internal sealed class SpecialistExecutor : ReflectingExecutor<SpecialistExecutor
         _specialistName = specialistName;
     }
 
+    public static void SetLogger(ILogger logger)
+    {
+        _logger = logger;
+    }
+
     public async ValueTask<OpinionData> HandleAsync(RouterDecision message, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
-        // Get the question ID from router decision (we'll add it there)
+        using var activity = _activitySource.StartActivity($"SpecialistExecutor.{_specialistName}.Handle");
+        activity?.SetTag("executor.type", "specialist");
+        activity?.SetTag("specialist.name", _specialistName);
+        
+        _logger?.LogInformation("{Specialist}Executor: 処理開始", _specialistName);
+
+        // Get the question ID from router decision
         var questionId = message.QuestionId;
         
         if (string.IsNullOrEmpty(questionId))
@@ -495,8 +510,14 @@ internal sealed class SpecialistExecutor : ReflectingExecutor<SpecialistExecutor
             throw new InvalidOperationException($"Question with ID {questionId} not found");
         }
 
+        activity?.SetTag("question.text", question.QuestionText);
+        _logger?.LogInformation("{Specialist}Executor: 質問取得 - {Question}", _specialistName, question.QuestionText);
+
         // Invoke the specialist agent
+        _logger?.LogInformation("{Specialist}Executor: エージェント呼び出し中...", _specialistName);
         var response = await _specialistAgent.RunAsync(question.QuestionText, cancellationToken: cancellationToken);
+        _logger?.LogInformation("{Specialist}Executor: エージェント応答: {Response}", _specialistName, response.Text);
+        
         var specialistOpinion = JsonSerializer.Deserialize<SpecialistOpinion>(response.Text);
 
         var opinionData = new OpinionData
@@ -505,6 +526,9 @@ internal sealed class SpecialistExecutor : ReflectingExecutor<SpecialistExecutor
             Opinion = specialistOpinion?.Opinion ?? string.Empty,
             QuestionId = questionId
         };
+
+        activity?.SetTag("opinion.length", opinionData.Opinion.Length);
+        _logger?.LogInformation("{Specialist}Executor: 意見生成完了 - {Opinion}", _specialistName, opinionData.Opinion);
 
         // Store the opinion
         var opinionKey = $"{questionId}_{_specialistName}";
@@ -526,16 +550,29 @@ internal sealed class SpecialistExecutor : ReflectingExecutor<SpecialistExecutor
 internal sealed class AggregatorExecutor : ReflectingExecutor<AggregatorExecutor>, IMessageHandler<OpinionData>
 {
     private readonly AIAgent _aggregatorAgent;
+    private static readonly ActivitySource _activitySource = new ActivitySource("GraphExecutorWorkflow");
+    private static ILogger? _logger;
 
     public AggregatorExecutor(AIAgent aggregatorAgent) : base("AggregatorExecutor")
     {
         _aggregatorAgent = aggregatorAgent;
     }
 
+    public static void SetLogger(ILogger logger)
+    {
+        _logger = logger;
+    }
+
     public async ValueTask HandleAsync(OpinionData message, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
+        using var activity = _activitySource.StartActivity("AggregatorExecutor.Handle");
+        activity?.SetTag("executor.type", "aggregator");
+        
+        _logger?.LogInformation("AggregatorExecutor: 処理開始 - 意見集約中...");
+
         // Get the question
         var question = await context.ReadStateAsync<Question>(message.QuestionId, scopeName: WorkflowStateConstants.QuestionStateScope, cancellationToken);
+        _logger?.LogInformation("AggregatorExecutor: 質問取得 - {Question}", question?.QuestionText);
 
         // Collect all opinions for this question
         var allOpinions = new List<OpinionData>();
@@ -549,8 +586,13 @@ internal sealed class AggregatorExecutor : ReflectingExecutor<AggregatorExecutor
             if (opinion is not null)
             {
                 allOpinions.Add(opinion);
+                _logger?.LogInformation("AggregatorExecutor: {Specialist} の意見を収集 - {Opinion}", 
+                    name, opinion.Opinion);
             }
         }
+
+        activity?.SetTag("opinions.count", allOpinions.Count);
+        _logger?.LogInformation("AggregatorExecutor: 収集した意見数: {Count}", allOpinions.Count);
 
         // Build the aggregation prompt
         var opinionsSummary = string.Join("\n\n", allOpinions.Select(o =>
@@ -567,11 +609,19 @@ internal sealed class AggregatorExecutor : ReflectingExecutor<AggregatorExecutor
 """;
 
         // Invoke the aggregator agent
+        _logger?.LogInformation("AggregatorExecutor: エージェント呼び出し中...");
         var response = await _aggregatorAgent.RunAsync(aggregationPrompt, cancellationToken: cancellationToken);
+        _logger?.LogInformation("AggregatorExecutor: エージェント応答: {Response}", response.Text);
+        
         var aggregatedResponse = JsonSerializer.Deserialize<AggregatedResponse>(response.Text);
 
         if (aggregatedResponse is not null)
         {
+            _logger?.LogInformation("AggregatorExecutor: 最終回答生成完了");
+            _logger?.LogInformation("結論: {Conclusion}", aggregatedResponse.Conclusion);
+            _logger?.LogInformation("根拠数: {RationaleCount}", aggregatedResponse.Rationale.Count);
+            _logger?.LogInformation("推奨アクション数: {ActionsCount}", aggregatedResponse.RecommendedActions.Count);
+
             var output = new StringBuilder();
             output.AppendLine();
             output.AppendLine("═══════════════════════════════════════════");
