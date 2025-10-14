@@ -104,20 +104,8 @@ var deployment = configuration["environmentVariables:AZURE_OPENAI_DEPLOYMENT_NAM
 logger.LogInformation("エンドポイント: {Endpoint}", endpoint);
 logger.LogInformation("デプロイメント名: {DeploymentName}", deployment);
 
-logger.LogInformation("認証情報の取得中（Azure CLI のみを使用）...");
-var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
-{
-    ExcludeEnvironmentCredential = true,
-    ExcludeManagedIdentityCredential = true,
-    ExcludeSharedTokenCacheCredential = true,
-    ExcludeVisualStudioCredential = true,
-    ExcludeVisualStudioCodeCredential = true,
-    ExcludeAzureCliCredential = false,  // Azure CLI のみ有効
-    ExcludeAzurePowerShellCredential = true,
-    ExcludeAzureDeveloperCliCredential = true,
-    ExcludeInteractiveBrowserCredential = true,
-    ExcludeWorkloadIdentityCredential = true
-});
+logger.LogInformation("認証情報の取得中（Azure CLI を使用）...");
+var credential = new AzureCliCredential();
 logger.LogInformation("認証情報取得完了");
 
 var openAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
