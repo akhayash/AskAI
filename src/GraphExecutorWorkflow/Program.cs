@@ -1,5 +1,6 @@
 // Copyright (c) Microsoft. All rights reserved.
 
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -9,6 +10,12 @@ using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Agents.AI.Workflows.Reflection;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
+using OpenTelemetry;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 namespace GraphExecutorWorkflowSample;
 
@@ -33,15 +40,107 @@ public static class Program
         Console.OutputEncoding = Encoding.UTF8;
         Console.InputEncoding = Encoding.UTF8;
 
-        // Set up the Azure OpenAI client
-        var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT") 
-            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
-        var deploymentName = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") 
+        // Load configuration from appsettings.json and environment variables
+        var configuration = new ConfigurationBuilder()
+            .SetBasePath(Directory.GetCurrentDirectory())
+            .AddJsonFile("appsettings.json", optional: true)
+            .AddJsonFile("appsettings.Development.json", optional: true)
+            .AddEnvironmentVariables()
+            .Build();
+
+        // OpenTelemetry とロギングを設定
+        var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
+            ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
+
+        var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
+            ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
+
+        // 空文字列の場合もデフォルト値を使用
+        if (string.IsNullOrEmpty(otlpEndpoint))
+        {
+            otlpEndpoint = "http://localhost:4317";
+        }
+
+        using var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.AddOpenTelemetry(options =>
+            {
+                options.SetResourceBuilder(ResourceBuilder.CreateDefault()
+                    .AddService("GraphExecutorWorkflow"));
+                options.IncludeFormattedMessage = true;
+                options.IncludeScopes = true;
+
+                options.AddOtlpExporter(exporterOptions =>
+                {
+                    exporterOptions.Endpoint = new Uri(otlpEndpoint);
+                });
+
+                options.AddConsoleExporter();
+            });
+            builder.AddSimpleConsole(options =>
+            {
+                options.IncludeScopes = true;
+                options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+            });
+
+            builder.SetMinimumLevel(LogLevel.Information);
+        });
+
+        var activitySource = new ActivitySource("GraphExecutorWorkflow");
+
+        using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+            .SetResourceBuilder(ResourceBuilder.CreateDefault()
+                .AddService("GraphExecutorWorkflow"))
+            .AddSource("GraphExecutorWorkflow")
+            .AddHttpClientInstrumentation()
+            .AddOtlpExporter(exporterOptions =>
+            {
+                exporterOptions.Endpoint = new Uri(otlpEndpoint);
+            })
+            .AddConsoleExporter()
+            .Build();
+
+        var logger = loggerFactory.CreateLogger("GraphExecutorWorkflow");
+        logger.LogInformation("=== アプリケーション起動 ===");
+        logger.LogInformation("テレメトリ設定: OTLP Endpoint = {OtlpEndpoint}", otlpEndpoint);
+        if (!string.IsNullOrEmpty(appInsightsConnectionString))
+        {
+            logger.LogInformation("Application Insights 接続文字列が設定されています");
+        }
+
+        // Get Azure OpenAI settings from configuration or environment variables
+        var endpoint = configuration["environmentVariables:AZURE_OPENAI_ENDPOINT"]
+            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
+            ?? throw new InvalidOperationException("環境変数 AZURE_OPENAI_ENDPOINT が設定されていません。");
+
+        var deploymentName = configuration["environmentVariables:AZURE_OPENAI_DEPLOYMENT_NAME"]
+            ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
             ?? "gpt-4o";
-        var chatClient = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
+
+        logger.LogInformation("エンドポイント: {Endpoint}", endpoint);
+        logger.LogInformation("デプロイメント名: {DeploymentName}", deploymentName);
+
+        logger.LogInformation("認証情報の取得中（Azure CLI のみを使用）...");
+        var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
+        {
+            ExcludeEnvironmentCredential = true,
+            ExcludeManagedIdentityCredential = true,
+            ExcludeSharedTokenCacheCredential = true,
+            ExcludeVisualStudioCredential = true,
+            ExcludeVisualStudioCodeCredential = true,
+            ExcludeAzureCliCredential = false,  // Azure CLI のみ有効
+            ExcludeAzurePowerShellCredential = true,
+            ExcludeAzureDeveloperCliCredential = true,
+            ExcludeInteractiveBrowserCredential = true,
+            ExcludeWorkloadIdentityCredential = true
+        });
+        logger.LogInformation("認証情報取得完了");
+
+        var chatClient = new AzureOpenAIClient(new Uri(endpoint), credential)
             .GetChatClient(deploymentName)
             .AsIChatClient();
 
+        logger.LogInformation("=== Graph Executor Workflow デモ ===");
         Console.WriteLine("=== Graph Executor Workflow デモ ===");
         Console.WriteLine();
         Console.WriteLine("このワークフローは以下のフローを実装しています:");
@@ -96,17 +195,51 @@ public static class Program
 
         var workflow = builder.Build();
 
+        // Output workflow visualization
+        logger.LogInformation("ワークフローグラフの構造:");
+        Console.WriteLine();
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine("ワークフローグラフ構造:");
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine("User Question");
+        Console.WriteLine("    ↓");
+        Console.WriteLine("┌─────────────────┐");
+        Console.WriteLine("│ Router Executor │  ← 専門家を選抜");
+        Console.WriteLine("└─────────────────┘");
+        Console.WriteLine("    ↓ (AddFanOutEdge with partitioner)");
+        Console.WriteLine("┌─────────┐ ┌─────────┐ ┌─────────┐");
+        Console.WriteLine("│Contract │ │  Spend  │ │Supplier │  ← 並列実行");
+        Console.WriteLine("│Executor │ │Executor │ │Executor │");
+        Console.WriteLine("└─────────┘ └─────────┘ └─────────┘");
+        Console.WriteLine("    ↓           ↓           ↓");
+        Console.WriteLine("    └───────────┴───────────┘");
+        Console.WriteLine("             ↓ (AddEdge - join)");
+        Console.WriteLine("    ┌──────────────────┐");
+        Console.WriteLine("    │   Aggregator     │  ← 意見を集約");
+        Console.WriteLine("    │   Executor       │");
+        Console.WriteLine("    └──────────────────┘");
+        Console.WriteLine("             ↓");
+        Console.WriteLine("         Final Answer");
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine();
+
         // Get user input
         Console.Write("質問> ");
         var question = Console.ReadLine();
 
         if (string.IsNullOrWhiteSpace(question))
         {
+            logger.LogWarning("質問が空です。");
             Console.WriteLine("質問が空です。");
             return;
         }
 
+        logger.LogInformation("受信した質問: {Question}", question);
+
         Console.WriteLine();
+        logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        logger.LogInformation("ワークフロー実行中...");
+        logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         Console.WriteLine("ワークフロー実行中...");
         Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -136,12 +269,17 @@ public static class Program
         }
 
         Console.WriteLine();
+        logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        logger.LogInformation("ワークフロー完了");
+        logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         Console.WriteLine("ワークフロー完了");
         Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         Console.WriteLine();
         Console.WriteLine("Enter キーを押して終了してください...");
         Console.ReadLine();
+
+        logger.LogInformation("=== アプリケーション終了 ===");
     }
 
     /// <summary>
