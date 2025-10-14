@@ -2,61 +2,81 @@
 
 ## 概要
 
-このワークフローは、Agent Framework の Executor と Edge の概念を使用したグラフベースのワークフロー実装です。
+このワークフローは、Microsoft Agent Framework の **WorkflowBuilder** と **条件付きエッジ** を使用した本格的なグラフベースのワークフロー実装です。
+
+HandsOff パターンではなく、`ReflectingExecutor`、`AddFanOutEdge`、カスタムパーティショナーなど、ワークフローの高度な機能を活用しています。
 
 ## アーキテクチャ
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Graph-Based Workflow                     │
+│           WorkflowBuilder-Based Graph Workflow              │
 └─────────────────────────────────────────────────────────────┘
 
-   ユーザー質問
+   ユーザー質問 (ChatMessage)
         │
         ↓
 ┌──────────────────┐
-│ Router Executor  │  ← ステップ 1: 専門家を特定
-│                  │
+│ Router Executor  │  ← ReflectingExecutor<RouterExecutor>
+│                  │     IMessageHandler<ChatMessage, RouterDecision>
 │ - 質問を分析     │
 │ - 専門家を選抜   │
 │ - JSON で出力    │
 └──────────────────┘
         │
-        ├─────────────────┐
-        ↓                 ↓
-┌──────────────┐   ┌──────────────┐
-│ Specialist   │   │ Specialist   │  ← ステップ 2: 意見生成（並列）
-│ Executor 1   │   │ Executor N   │
-│              │   │              │
-│ - 専門分野の │   │ - 専門分野の │
-│   観点から   │   │   観点から   │
-│ - 意見を生成 │   │ - 意見を生成 │
-└──────────────┘   └──────────────┘
-        │                 │
-        └────────┬────────┘
-                 ↓
-        ┌──────────────────┐
-        │ Aggregator       │  ← ステップ 3: 意見を集約
-        │ Executor         │
-        │                  │
-        │ - 意見を統合     │
-        │ - 構造化出力     │
-        │ - 最終回答       │
-        └──────────────────┘
-                 │
-                 ↓
-            最終回答
+        │ AddFanOutEdge with Custom Partitioner
+        │ (動的分岐: 選抜された専門家のみ実行)
+        │
+        ├─────────┬─────────┬─────────┬─────────┬─────────┐
+        ↓         ↓         ↓         ↓         ↓         ↓
+    ┌────────┐┌────────┐┌────────┐┌────────┐┌────────┐┌────────┐
+    │Contract││ Spend  ││Negotia-││Sourcing││Knowledge││Supplier│
+    │Executor││Executor││tion    ││Executor││Executor││Executor│
+    │        ││        ││Executor││        ││        ││        │
+    └────────┘└────────┘└────────┘└────────┘└────────┘└────────┘
+         │        │         │         │         │         │
+         └────────┴─────────┴─────────┴─────────┴─────────┘
+                            │
+                            │ AddEdge (結合)
+                            ↓
+                   ┌──────────────────┐
+                   │ Aggregator       │  ← ReflectingExecutor<AggregatorExecutor>
+                   │ Executor         │     IMessageHandler<OpinionData>
+                   │                  │
+                   │ - 意見を統合     │
+                   │ - 構造化出力     │
+                   │ - 最終回答       │
+                   └──────────────────┘
+                            │
+                            │ WithOutputFrom
+                            ↓
+                       最終回答
 ```
 
 ## 主要コンポーネント
 
-### 1. Router Executor
-- **役割**: ユーザーの質問を分析し、必要な専門家を選抜
-- **入力**: ユーザー質問
-- **出力**: 選抜された専門家のリスト（JSON形式）
-- **エッジ**: Router → Specialists（動的分岐）
+### 1. Router Executor (ReflectingExecutor)
+```csharp
+internal sealed class RouterExecutor : 
+    ReflectingExecutor<RouterExecutor>, 
+    IMessageHandler<ChatMessage, RouterDecision>
+```
 
-### 2. Specialist Executors
+- **役割**: ユーザーの質問を分析し、必要な専門家を選抜
+- **入力**: `ChatMessage` (ユーザー質問)
+- **出力**: `RouterDecision` (選抜された専門家のリスト)
+- **特徴**:
+  - Structured Output (JSON Schema) を使用
+  - 質問を WorkflowState に保存
+  - カスタム `RouterEvent` を発行
+
+### 2. Specialist Executors (ReflectingExecutor)
+```csharp
+internal sealed class SpecialistExecutor : 
+    ReflectingExecutor<SpecialistExecutor>, 
+    IMessageHandler<RouterDecision, OpinionData>
+```
+
 - **役割**: 各専門領域から意見を生成
 - **種類**: 
   - Contract Executor: 契約関連の専門家
@@ -65,53 +85,105 @@
   - Sourcing Executor: 調達戦略の専門家
   - Knowledge Executor: 知識管理の専門家
   - Supplier Executor: サプライヤー管理の専門家
-- **入力**: ユーザー質問
-- **出力**: 専門領域からの意見
-- **実行**: 並列実行（効率化）
-- **エッジ**: Specialists → Aggregator（結合）
+- **入力**: `RouterDecision`
+- **出力**: `OpinionData` (専門家の意見)
+- **実行**: パーティショナーによる動的並列実行
+- **特徴**:
+  - WorkflowState から質問を読み取り
+  - 意見を OpinionsState に保存
+  - カスタム `SpecialistEvent` を発行
 
-### 3. Aggregator Executor
+### 3. Aggregator Executor (ReflectingExecutor)
+```csharp
+internal sealed class AggregatorExecutor : 
+    ReflectingExecutor<AggregatorExecutor>, 
+    IMessageHandler<OpinionData>
+```
+
 - **役割**: 各専門家の意見を統合し、構造化された最終回答を生成
-- **入力**: 各専門家の意見
-- **出力**: 構造化された最終回答
-  - 結論
-  - 根拠
-  - 各専門家の所見
-  - 推奨アクション
+- **入力**: `OpinionData` (最後の専門家意見をトリガーとして使用)
+- **出力**: 構造化された最終回答 (YieldOutput)
+- **特徴**:
+  - 全ての専門家意見を OpinionsState から収集
+  - Structured Output で統合回答を生成
+  - 構造化フォーマットで最終出力
 
-## エッジ定義
+## ワークフローグラフの構築
 
-このワークフローでは、明示的なエッジ（フロー）が定義されています：
+このワークフローは `WorkflowBuilder` を使用して構築されます：
 
-1. **Router → Specialists**: 動的分岐エッジ
-   - Router の選抜結果に基づいて、実行する Specialist を動的に決定
-   - 不要な Executor は実行されない（コスト最適化）
+```csharp
+WorkflowBuilder builder = new(routerExecutor);
+builder
+    .AddFanOutEdge(
+        routerExecutor,
+        targets: [contractExecutor, spendExecutor, negotiationExecutor, 
+                  sourcingExecutor, knowledgeExecutor, supplierExecutor],
+        partitioner: GetSpecialistPartitioner()
+    )
+    .AddEdge(contractExecutor, aggregatorExecutor)
+    .AddEdge(spendExecutor, aggregatorExecutor)
+    .AddEdge(negotiationExecutor, aggregatorExecutor)
+    .AddEdge(sourcingExecutor, aggregatorExecutor)
+    .AddEdge(knowledgeExecutor, aggregatorExecutor)
+    .AddEdge(supplierExecutor, aggregatorExecutor)
+    .WithOutputFrom(aggregatorExecutor);
+```
 
-2. **Specialists → Aggregator**: 結合エッジ
-   - 複数の Specialist の出力を集約
-   - 並列実行された結果を待ち合わせ
+### エッジの種類
+
+1. **AddFanOutEdge (動的分岐)**
+   ```csharp
+   .AddFanOutEdge(source, targets, partitioner)
+   ```
+   - カスタムパーティショナー関数で実行するターゲットを決定
+   - `RouterDecision.Selected` に基づいて専門家を選択
+   - 選抜されなかった Executor は実行されない（コスト最適化）
+
+2. **AddEdge (単純エッジ)**
+   ```csharp
+   .AddEdge(specialist, aggregator)
+   ```
+   - 各専門家 Executor から Aggregator への固定エッジ
+   - 実行された専門家全員が完了後、Aggregator が起動
+
+3. **WithOutputFrom (出力指定)**
+   ```csharp
+   .WithOutputFrom(aggregatorExecutor)
+   ```
+   - ワークフローの最終出力を生成する Executor を指定
 
 ## 特徴
 
-### ✅ Executor パターンの実装
-- 各コンポーネントを独立した Executor として実装
-- 責任の明確な分離
-- 再利用可能な設計
+### ✅ WorkflowBuilder パターンの使用
+- Microsoft Agent Framework の正式な WorkflowBuilder API を使用
+- HandsOff パターンではなく、グラフベースの構築
+- 明示的なエッジとパーティショナーの定義
 
-### ✅ グラフベースのフロー
-- 明示的なエッジ定義
-- 動的な実行パス
-- 条件分岐のサポート
+### ✅ ReflectingExecutor の実装
+- `ReflectingExecutor<T>` を継承した型安全な Executor
+- `IMessageHandler<TInput, TOutput>` インターフェースの実装
+- フレームワークによる自動的なメッセージルーティング
 
-### ✅ 並列実行
-- Specialist Executors の並列実行
-- 応答時間の短縮
-- リソースの効率的な利用
+### ✅ Structured Output (JSON Schema)
+- `ChatResponseFormat.ForJsonSchema<T>()` を使用
+- 型安全な Agent 応答
+- パース エラーの削減
 
-### ✅ 観測性
-- OpenTelemetry による完全なトレーシング
-- 各 Executor の実行時間を計測
-- エラー追跡とデバッグ支援
+### ✅ WorkflowState 管理
+- `IWorkflowContext` による状態管理
+- `QueueStateUpdateAsync` / `ReadStateAsync` でデータ共有
+- スコープ分離 (QuestionState / OpinionsState)
+
+### ✅ カスタム WorkflowEvent
+- `RouterEvent` / `SpecialistEvent` の独自イベント
+- リアルタイムな進行状況の可視化
+- `context.AddEventAsync()` による発行
+
+### ✅ 動的並列実行
+- FanOutEdge + Partitioner による条件分岐
+- 選抜された専門家のみ実行
+- コストと時間の最適化
 
 ## 使用方法
 

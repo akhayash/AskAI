@@ -1,503 +1,555 @@
+// Copyright (c) Microsoft. All rights reserved.
+
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Azure.AI.OpenAI;
 using Azure.Identity;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
+using Microsoft.Agents.AI.Workflows.Reflection;
 using Microsoft.Extensions.AI;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-using OpenTelemetry;
-using OpenTelemetry.Logs;
-using OpenTelemetry.Resources;
-using OpenTelemetry.Trace;
-using System.Diagnostics;
-using System.Text;
-using System.Text.Json;
-using ChatRole = Microsoft.Extensions.AI.ChatRole;
 
-// コンソールの文字エンコーディングを UTF-8 に設定
-Console.OutputEncoding = Encoding.UTF8;
-Console.InputEncoding = Encoding.UTF8;
+namespace GraphExecutorWorkflowSample;
 
-// 設定を読み込む
-var configuration = new ConfigurationBuilder()
-    .SetBasePath(Directory.GetCurrentDirectory())
-    .AddJsonFile("appsettings.json", optional: true)
-    .AddJsonFile("appsettings.Development.json", optional: true)
-    .AddEnvironmentVariables()
-    .Build();
-
-// OpenTelemetry とロギングを設定
-var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
-    ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
-    ?? "http://localhost:4317";
-
-using var loggerFactory = LoggerFactory.Create(builder =>
+/// <summary>
+/// This sample demonstrates a multi-selection routing workflow for procurement domain specialists.
+/// 
+/// The workflow implements:
+/// 1. Router Executor: Analyzes user questions and selects relevant specialist executors
+/// 2. Specialist Executors: Generate opinions in parallel based on their domain expertise
+/// 3. Aggregator Executor: Consolidates all opinions into a structured final answer
+///
+/// Key features:
+/// - Dynamic specialist selection based on question analysis
+/// - Parallel execution of selected specialists for efficiency
+/// - Conditional edges for routing to selected specialists
+/// - State management for sharing data between executors
+/// </summary>
+public static class Program
 {
-    builder.AddOpenTelemetry(options =>
+    private static async Task Main()
     {
-        options.SetResourceBuilder(ResourceBuilder.CreateDefault()
-            .AddService("GraphExecutorWorkflow"));
+        Console.OutputEncoding = Encoding.UTF8;
+        Console.InputEncoding = Encoding.UTF8;
 
-        options.IncludeFormattedMessage = true;
-        options.IncludeScopes = true;
+        // Set up the Azure OpenAI client
+        var endpoint = Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT") 
+            ?? throw new InvalidOperationException("AZURE_OPENAI_ENDPOINT is not set.");
+        var deploymentName = Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME") 
+            ?? "gpt-4o";
+        var chatClient = new AzureOpenAIClient(new Uri(endpoint), new AzureCliCredential())
+            .GetChatClient(deploymentName)
+            .AsIChatClient();
 
-        options.AddOtlpExporter(exporterOptions =>
+        Console.WriteLine("=== Graph Executor Workflow デモ ===");
+        Console.WriteLine();
+        Console.WriteLine("このワークフローは以下のフローを実装しています:");
+        Console.WriteLine("1. Router Executor: ユーザー質問から必要な専門家を特定");
+        Console.WriteLine("2. Specialist Executors: 各専門家が並列で意見を生成");
+        Console.WriteLine("3. Aggregator Executor: 意見を集約し最終出力");
+        Console.WriteLine();
+
+        // Create agents for each executor
+        AIAgent routerAgent = GetRouterAgent(chatClient);
+        AIAgent contractAgent = GetSpecialistAgent(chatClient, "Contract", "契約関連");
+        AIAgent spendAgent = GetSpecialistAgent(chatClient, "Spend", "支出分析");
+        AIAgent negotiationAgent = GetSpecialistAgent(chatClient, "Negotiation", "交渉戦略");
+        AIAgent sourcingAgent = GetSpecialistAgent(chatClient, "Sourcing", "調達戦略");
+        AIAgent knowledgeAgent = GetSpecialistAgent(chatClient, "Knowledge", "知識管理");
+        AIAgent supplierAgent = GetSpecialistAgent(chatClient, "Supplier", "サプライヤー管理");
+        AIAgent aggregatorAgent = GetAggregatorAgent(chatClient);
+
+        // Create executors
+        var routerExecutor = new RouterExecutor(routerAgent);
+        var contractExecutor = new SpecialistExecutor(contractAgent, "Contract");
+        var spendExecutor = new SpecialistExecutor(spendAgent, "Spend");
+        var negotiationExecutor = new SpecialistExecutor(negotiationAgent, "Negotiation");
+        var sourcingExecutor = new SpecialistExecutor(sourcingAgent, "Sourcing");
+        var knowledgeExecutor = new SpecialistExecutor(knowledgeAgent, "Knowledge");
+        var supplierExecutor = new SpecialistExecutor(supplierAgent, "Supplier");
+        var aggregatorExecutor = new AggregatorExecutor(aggregatorAgent);
+
+        // Build the workflow with conditional edges
+        WorkflowBuilder builder = new(routerExecutor);
+        builder
+            .AddFanOutEdge(
+                routerExecutor,
+                targets: [
+                    contractExecutor,
+                    spendExecutor,
+                    negotiationExecutor,
+                    sourcingExecutor,
+                    knowledgeExecutor,
+                    supplierExecutor
+                ],
+                partitioner: GetSpecialistPartitioner()
+            )
+            // All specialists route to the aggregator
+            .AddEdge(contractExecutor, aggregatorExecutor)
+            .AddEdge(spendExecutor, aggregatorExecutor)
+            .AddEdge(negotiationExecutor, aggregatorExecutor)
+            .AddEdge(sourcingExecutor, aggregatorExecutor)
+            .AddEdge(knowledgeExecutor, aggregatorExecutor)
+            .AddEdge(supplierExecutor, aggregatorExecutor)
+            .WithOutputFrom(aggregatorExecutor);
+
+        var workflow = builder.Build();
+
+        // Get user input
+        Console.Write("質問> ");
+        var question = Console.ReadLine();
+
+        if (string.IsNullOrWhiteSpace(question))
         {
-            exporterOptions.Endpoint = new Uri(otlpEndpoint);
-        });
+            Console.WriteLine("質問が空です。");
+            return;
+        }
 
-        options.AddConsoleExporter(consoleOptions =>
-        {
-            consoleOptions.Targets = OpenTelemetry.Exporter.ConsoleExporterOutputTargets.Console;
-        });
-    });
+        Console.WriteLine();
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine("ワークフロー実行中...");
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine();
 
-    builder.AddSimpleConsole(options =>
-    {
-        options.IncludeScopes = true;
-        options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
-    });
-
-    builder.SetMinimumLevel(LogLevel.Information);
-});
-
-var activitySource = new ActivitySource("GraphExecutorWorkflow");
-
-using var tracerProvider = Sdk.CreateTracerProviderBuilder()
-    .SetResourceBuilder(ResourceBuilder.CreateDefault()
-        .AddService("GraphExecutorWorkflow"))
-    .AddSource("GraphExecutorWorkflow")
-    .AddHttpClientInstrumentation()
-    .AddOtlpExporter(exporterOptions =>
-    {
-        exporterOptions.Endpoint = new Uri(otlpEndpoint);
-    })
-    .AddConsoleExporter()
-    .Build();
-
-var logger = loggerFactory.CreateLogger<Program>();
-logger.LogInformation("=== Graph Executor Workflow デモ ===");
-
-// 環境変数を設定から取得
-var endpoint = configuration["environmentVariables:AZURE_OPENAI_ENDPOINT"]
-    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-    ?? throw new InvalidOperationException("環境変数 AZURE_OPENAI_ENDPOINT が設定されていません。");
-
-var deployment = configuration["environmentVariables:AZURE_OPENAI_DEPLOYMENT_NAME"]
-    ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
-    ?? throw new InvalidOperationException("環境変数 AZURE_OPENAI_DEPLOYMENT_NAME が設定されていません。");
-
-logger.LogInformation("エンドポイント: {Endpoint}", endpoint);
-logger.LogInformation("デプロイメント名: {DeploymentName}", deployment);
-
-var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
-{
-    ExcludeEnvironmentCredential = true,
-    ExcludeManagedIdentityCredential = true,
-    ExcludeSharedTokenCacheCredential = true,
-    ExcludeVisualStudioCredential = true,
-    ExcludeVisualStudioCodeCredential = true,
-    ExcludeAzureCliCredential = false,
-    ExcludeAzurePowerShellCredential = true,
-    ExcludeAzureDeveloperCliCredential = true,
-    ExcludeInteractiveBrowserCredential = true,
-    ExcludeWorkloadIdentityCredential = true
-});
-
-var openAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
-var chatClient = openAIClient.GetChatClient(deployment);
-IChatClient extensionsAIChatClient = chatClient.AsIChatClient();
-
-// ユーザー入力
-Console.WriteLine("質問を入力してください。");
-Console.Write("質問> ");
-var question = Console.ReadLine();
-
-if (string.IsNullOrWhiteSpace(question))
-{
-    logger.LogWarning("質問が空です。");
-    return;
-}
-
-logger.LogInformation("受信した質問: {Question}", question);
-
-// ==========================================
-// グラフベースのワークフロー実装
-// ==========================================
-// 
-// フロー:
-// 1. Router Executor: ユーザー質問から必要な専門家を特定
-// 2. Specialist Executors: 各専門家が並列で意見を生成
-// 3. Aggregator Executor: 意見を集約し最終出力
-//
-// エッジ定義:
-// - Router → Specialists (動的分岐)
-// - Specialists → Aggregator (結合)
-// ==========================================
-
-logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-logger.LogInformation("ステップ 1: Router Executor - 専門家を特定");
-logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-// Router Executor: 専門家を選抜
-var routerAgent = CreateRouterExecutor(extensionsAIChatClient);
-var selectedSpecialists = await ExecuteRouterAsync(routerAgent, question, logger, activitySource);
-
-logger.LogInformation("✓ 選抜された専門家: {Specialists}", string.Join(", ", selectedSpecialists));
-
-logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-logger.LogInformation("ステップ 2: Specialist Executors - 意見を生成");
-logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-// Specialist Executors: 選抜された専門家が並列実行
-var specialistExecutors = CreateSpecialistExecutors(extensionsAIChatClient);
-var opinions = await ExecuteSpecialistsAsync(specialistExecutors, selectedSpecialists, question, logger, activitySource);
-
-foreach (var (specialist, opinion) in opinions)
-{
-    logger.LogInformation("[{Specialist}] {Opinion}", specialist, opinion.Substring(0, Math.Min(100, opinion.Length)) + "...");
-}
-
-logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-logger.LogInformation("ステップ 3: Aggregator Executor - 意見を集約");
-logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-// Aggregator Executor: 意見を統合
-var aggregatorAgent = CreateAggregatorExecutor(extensionsAIChatClient);
-var finalOutput = await ExecuteAggregatorAsync(aggregatorAgent, question, opinions, logger, activitySource);
-
-Console.WriteLine("\n" + new string('═', 60));
-Console.WriteLine("【最終回答】");
-Console.WriteLine(new string('═', 60));
-Console.WriteLine(finalOutput);
-Console.WriteLine(new string('═', 60) + "\n");
-
-logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-logger.LogInformation("ワークフロー完了");
-logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-
-Console.WriteLine("\nEnter キーを押して終了してください...");
-Console.ReadLine();
-
-// ==========================================
-// Executor 定義
-// ==========================================
-
-static ChatClientAgent CreateRouterExecutor(IChatClient chatClient)
-{
-    var instructions = """
-あなたは Router Executor です。
-ユーザーの質問を分析し、必要な専門家を選抜します。
-
-専門家候補:
-- Contract: 契約関連の専門家
-- Spend: 支出分析の専門家
-- Negotiation: 交渉戦略の専門家
-- Sourcing: 調達戦略の専門家
-- Knowledge: 知識管理の専門家
-- Supplier: サプライヤー管理の専門家
-
-以下のJSON形式で回答してください:
-{
-  "selected": ["専門家名1", "専門家名2"],
-  "reason": "選抜理由"
-}
-
-注意: 過剰選抜は避け、通常は2-3件以内で十分です。
-""";
-
-    return new ChatClientAgent(
-        chatClient,
-        instructions,
-        "router_executor",
-        "Router Executor");
-}
-
-static Dictionary<string, ChatClientAgent> CreateSpecialistExecutors(IChatClient chatClient)
-{
-    var specialists = new Dictionary<string, ChatClientAgent>();
-    
-    var specialistDefinitions = new Dictionary<string, string>
-    {
-        ["Contract"] = "契約条件、リスク条項、法的観点から専門的な意見を提供します。",
-        ["Spend"] = "支出分析、コスト削減、予算管理の観点から専門的な意見を提供します。",
-        ["Negotiation"] = "交渉戦略、条件交渉、合意形成の観点から専門的な意見を提供します。",
-        ["Sourcing"] = "調達戦略、サプライヤー選定、調達プロセスの観点から専門的な意見を提供します。",
-        ["Knowledge"] = "業界知識、ベストプラクティス、一般的な情報の観点から専門的な意見を提供します。",
-        ["Supplier"] = "サプライヤー管理、関係構築、パフォーマンス評価の観点から専門的な意見を提供します。"
-    };
-
-    foreach (var (name, description) in specialistDefinitions)
-    {
-        var instructions = $"""
-あなたは {name} Specialist Executor です。
-{description}
-
-質問に対して、あなたの専門領域から見た重要なポイントを2-3文で簡潔に述べてください。
-""";
-
-        specialists[name] = new ChatClientAgent(
-            chatClient,
-            instructions,
-            $"{name.ToLower()}_executor",
-            $"{name} Executor");
-    }
-
-    return specialists;
-}
-
-static ChatClientAgent CreateAggregatorExecutor(IChatClient chatClient)
-{
-    var instructions = """
-あなたは Aggregator Executor です。
-複数の専門家の意見を統合し、構造化された最終回答を生成します。
-
-以下の形式で回答を生成してください:
-
-## 結論
-[各専門家の意見を統合した結論を3-4文で記述]
-
-## 根拠
-[結論に至った主要な根拠を箇条書きで記述]
-- 根拠1
-- 根拠2
-- 根拠3
-
-## 各専門家の所見
-[各専門家の意見を要約]
-
-## 推奨アクション
-[具体的な次のステップを箇条書きで記述]
-- アクション1
-- アクション2
-- アクション3
-""";
-
-    return new ChatClientAgent(
-        chatClient,
-        instructions,
-        "aggregator_executor",
-        "Aggregator Executor");
-}
-
-// ==========================================
-// Executor 実行関数（エッジ実装）
-// ==========================================
-
-static async Task<List<string>> ExecuteRouterAsync(
-    ChatClientAgent routerAgent,
-    string question,
-    ILogger logger,
-    ActivitySource activitySource)
-{
-    using var activity = activitySource.StartActivity("RouterExecutor", ActivityKind.Internal);
-    activity?.SetTag("executor.type", "router");
-    activity?.SetTag("question", question);
-
-    var messages = new List<ChatMessage>
-    {
-        new ChatMessage(ChatRole.User, $"質問: {question}")
-    };
-
-    try
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        // Execute the workflow
+        await using StreamingRun run = await InProcessExecution.StreamAsync(
+            workflow, 
+            new ChatMessage(ChatRole.User, question)
+        );
+        await run.TrySendMessageAsync(new TurnToken(emitEvents: true));
         
-        var workflow = AgentWorkflowBuilder
-            .CreateHandoffBuilderWith(routerAgent)
-            .Build();
-
-        var workflowAgent = await workflow.AsAgentAsync("router", "Router");
-        var thread = workflowAgent.GetNewThread();
-
-        var responseBuilder = new StringBuilder();
-        await foreach (var update in workflowAgent.RunStreamingAsync(messages, thread, cancellationToken: cts.Token))
+        await foreach (WorkflowEvent evt in run.WatchStreamAsync().ConfigureAwait(false))
         {
-            if (!string.IsNullOrEmpty(update.Text))
+            if (evt is WorkflowOutputEvent outputEvent)
             {
-                responseBuilder.Append(update.Text);
+                Console.WriteLine($"{outputEvent}");
+            }
+            else if (evt is SpecialistEvent specialistEvent)
+            {
+                Console.WriteLine($"[{specialistEvent.SpecialistName}] {specialistEvent.Message}");
+            }
+            else if (evt is RouterEvent routerEvent)
+            {
+                Console.WriteLine($"[Router] {routerEvent.Message}");
             }
         }
 
-        var response = responseBuilder.ToString();
-        logger.LogInformation("Router Response: {Response}", response);
-
-        // JSONをパース
-        var jsonText = ExtractJson(response);
-        var routerDecision = JsonSerializer.Deserialize<RouterDecision>(jsonText, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        });
-
-        var selected = routerDecision?.Selected ?? new List<string>();
-        if (selected.Count == 0)
-        {
-            logger.LogWarning("専門家が選抜されませんでした。Knowledge をデフォルト使用します。");
-            selected = new List<string> { "Knowledge" };
-        }
-
-        activity?.SetTag("selected.count", selected.Count);
-        activity?.SetTag("selected.specialists", string.Join(", ", selected));
-
-        return selected;
+        Console.WriteLine();
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine("ワークフロー完了");
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine();
+        Console.WriteLine("Enter キーを押して終了してください...");
+        Console.ReadLine();
     }
-    catch (Exception ex)
+
+    /// <summary>
+    /// Creates a partitioner for routing to specialists based on router decision.
+    /// </summary>
+    private static Func<RouterDecision?, int, IEnumerable<int>> GetSpecialistPartitioner()
     {
-        logger.LogError(ex, "Router Executor エラー: {Message}", ex.Message);
-        activity?.SetTag("error", true);
-        activity?.SetTag("error.message", ex.Message);
-        return new List<string> { "Knowledge" };
-    }
-}
-
-static async Task<Dictionary<string, string>> ExecuteSpecialistsAsync(
-    Dictionary<string, ChatClientAgent> specialists,
-    List<string> selectedSpecialists,
-    string question,
-    ILogger logger,
-    ActivitySource activitySource)
-{
-    using var activity = activitySource.StartActivity("SpecialistExecutors", ActivityKind.Internal);
-    activity?.SetTag("executor.type", "specialists");
-    activity?.SetTag("specialists.count", selectedSpecialists.Count);
-
-    var tasks = selectedSpecialists
-        .Where(name => specialists.ContainsKey(name))
-        .Select(async name =>
+        return (routerDecision, targetCount) =>
         {
-            using var specialistActivity = activitySource.StartActivity($"SpecialistExecutor.{name}", ActivityKind.Internal);
-            specialistActivity?.SetTag("specialist.name", name);
-
-            var agent = specialists[name];
-            var messages = new List<ChatMessage>
+            if (routerDecision is not null && routerDecision.Selected.Count > 0)
             {
-                new ChatMessage(ChatRole.User, $"質問: {question}\n\nあなたの専門分野から見た意見を述べてください。")
-            };
+                var targets = new List<int>();
+                var specialistNames = new[] { "Contract", "Spend", "Negotiation", "Sourcing", "Knowledge", "Supplier" };
 
-            try
-            {
-                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                
-                var workflow = AgentWorkflowBuilder
-                    .CreateHandoffBuilderWith(agent)
-                    .Build();
-
-                var workflowAgent = await workflow.AsAgentAsync(name, name);
-                var thread = workflowAgent.GetNewThread();
-
-                var opinionBuilder = new StringBuilder();
-                await foreach (var update in workflowAgent.RunStreamingAsync(messages, thread, cancellationToken: cts.Token))
+                foreach (var selected in routerDecision.Selected)
                 {
-                    if (!string.IsNullOrEmpty(update.Text))
+                    var index = Array.IndexOf(specialistNames, selected);
+                    if (index >= 0)
                     {
-                        opinionBuilder.Append(update.Text);
+                        targets.Add(index);
                     }
                 }
 
-                var opinion = opinionBuilder.ToString();
-                specialistActivity?.SetTag("opinion.length", opinion.Length);
-                logger.LogInformation("{Specialist} Executor 完了", name);
-
-                return (name, opinion);
+                return targets.Count > 0 ? targets : new[] { 4 }; // Default to Knowledge if no match
             }
-            catch (Exception ex)
+            
+            return new[] { 4 }; // Default to Knowledge specialist
+        };
+    }
+
+    /// <summary>
+    /// Creates the router agent that selects appropriate specialists.
+    /// </summary>
+    private static ChatClientAgent GetRouterAgent(IChatClient chatClient) =>
+        new(chatClient, new ChatClientAgentOptions(
+            instructions: """
+            あなたは調達領域のルーターです。ユーザーの質問を分析し、必要な専門家を選抜します。
+            
+            専門家候補:
+            - Contract: 契約条件、契約交渉、契約リスク
+            - Spend: コスト分析、予算管理、支出最適化
+            - Negotiation: 交渉戦略、価格交渉、条件交渉
+            - Sourcing: サプライヤー選定、調達戦略、ソーシング
+            - Knowledge: 一般的な調達知識、ベストプラクティス
+            - Supplier: サプライヤー管理、関係構築、評価
+            
+            通常は2-3件の専門家で十分です。質問の内容を慎重に分析してください。
+            """)
+        {
+            ChatOptions = new()
             {
-                logger.LogError(ex, "{Specialist} Executor エラー: {Message}", name, ex.Message);
-                specialistActivity?.SetTag("error", true);
-                return (name, $"[エラー: {ex.Message}]");
+                ResponseFormat = ChatResponseFormat.ForJsonSchema<RouterDecision>()
             }
         });
 
-    var results = await Task.WhenAll(tasks);
-    return results.ToDictionary(r => r.Item1, r => r.Item2);
+    /// <summary>
+    /// Creates a specialist agent for a specific domain.
+    /// </summary>
+    private static ChatClientAgent GetSpecialistAgent(IChatClient chatClient, string name, string domain) =>
+        new(chatClient, new ChatClientAgentOptions(
+            instructions: $"""
+            あなたは{domain}の専門家です。
+            質問に対して、{domain}の観点から重要なポイントを2-3文で簡潔に述べてください。
+            専門的な知識と実務経験に基づいた意見を提供してください。
+            """)
+        {
+            ChatOptions = new()
+            {
+                ResponseFormat = ChatResponseFormat.ForJsonSchema<SpecialistOpinion>()
+            }
+        });
+
+    /// <summary>
+    /// Creates the aggregator agent that consolidates specialist opinions.
+    /// </summary>
+    private static ChatClientAgent GetAggregatorAgent(IChatClient chatClient) =>
+        new(chatClient, new ChatClientAgentOptions(
+            instructions: """
+            あなたは Aggregator です。複数の専門家の意見を統合し、構造化された最終回答を生成します。
+            
+            各専門家の意見を尊重しながら、一貫性のある結論を導いてください。
+            回答は以下の形式で生成してください:
+            
+            ## 結論
+            [統合された結論を3-4文で記述]
+            
+            ## 根拠
+            - [根拠1]
+            - [根拠2]
+            - [根拠3]
+            
+            ## 各専門家の所見
+            [各専門家の意見を要約]
+            
+            ## 推奨アクション
+            - [アクション1]
+            - [アクション2]
+            - [アクション3]
+            """)
+        {
+            ChatOptions = new()
+            {
+                ResponseFormat = ChatResponseFormat.ForJsonSchema<AggregatedResponse>()
+            }
+        });
 }
 
-static async Task<string> ExecuteAggregatorAsync(
-    ChatClientAgent aggregatorAgent,
-    string question,
-    Dictionary<string, string> opinions,
-    ILogger logger,
-    ActivitySource activitySource)
+// ==========================================
+// State Constants
+// ==========================================
+
+internal static class WorkflowStateConstants
 {
-    using var activity = activitySource.StartActivity("AggregatorExecutor", ActivityKind.Internal);
-    activity?.SetTag("executor.type", "aggregator");
-    activity?.SetTag("opinions.count", opinions.Count);
+    public const string QuestionStateScope = "QuestionState";
+    public const string OpinionsStateScope = "OpinionsState";
+}
 
-    var opinionsSummary = string.Join("\n\n", opinions.Select(kvp =>
-        $"【{kvp.Key} の意見】\n{kvp.Value}"));
+// ==========================================
+// Data Models
+// ==========================================
 
-    var messages = new List<ChatMessage>
+/// <summary>
+/// Represents the router's decision on which specialists to engage.
+/// </summary>
+public sealed class RouterDecision
+{
+    [JsonPropertyName("selected")]
+    public List<string> Selected { get; set; } = new();
+
+    [JsonPropertyName("reason")]
+    public string Reason { get; set; } = string.Empty;
+
+    [JsonIgnore]
+    public string QuestionId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Represents a question with metadata.
+/// </summary>
+internal sealed class Question
+{
+    [JsonPropertyName("question_id")]
+    public string QuestionId { get; set; } = string.Empty;
+
+    [JsonPropertyName("question_text")]
+    public string QuestionText { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Represents a specialist's opinion.
+/// </summary>
+public sealed class SpecialistOpinion
+{
+    [JsonPropertyName("opinion")]
+    public string Opinion { get; set; } = string.Empty;
+
+    [JsonPropertyName("key_points")]
+    public List<string> KeyPoints { get; set; } = new();
+}
+
+/// <summary>
+/// Represents an opinion with metadata.
+/// </summary>
+internal sealed class OpinionData
+{
+    [JsonPropertyName("specialist_name")]
+    public string SpecialistName { get; set; } = string.Empty;
+
+    [JsonPropertyName("opinion")]
+    public string Opinion { get; set; } = string.Empty;
+
+    [JsonPropertyName("question_id")]
+    public string QuestionId { get; set; } = string.Empty;
+}
+
+/// <summary>
+/// Represents the aggregated response.
+/// </summary>
+public sealed class AggregatedResponse
+{
+    [JsonPropertyName("conclusion")]
+    public string Conclusion { get; set; } = string.Empty;
+
+    [JsonPropertyName("rationale")]
+    public List<string> Rationale { get; set; } = new();
+
+    [JsonPropertyName("specialist_insights")]
+    public string SpecialistInsights { get; set; } = string.Empty;
+
+    [JsonPropertyName("recommended_actions")]
+    public List<string> RecommendedActions { get; set; } = new();
+}
+
+// ==========================================
+// Custom Events
+// ==========================================
+
+/// <summary>
+/// Event emitted by the router executor.
+/// </summary>
+internal sealed class RouterEvent : WorkflowEvent
+{
+    public RouterEvent(string message) : base(message) { }
+    public string Message { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// Event emitted by specialist executors.
+/// </summary>
+internal sealed class SpecialistEvent : WorkflowEvent
+{
+    public SpecialistEvent(string specialistName, string message) : base(message)
     {
-        new ChatMessage(ChatRole.User, $"""
-質問: {question}
+        SpecialistName = specialistName;
+        Message = message;
+    }
+    
+    public string SpecialistName { get; }
+    public string Message { get; }
+}
+
+// ==========================================
+// Executors
+// ==========================================
+
+/// <summary>
+/// Router executor that analyzes questions and selects appropriate specialists.
+/// </summary>
+internal sealed class RouterExecutor : ReflectingExecutor<RouterExecutor>, IMessageHandler<ChatMessage, RouterDecision>
+{
+    private readonly AIAgent _routerAgent;
+
+    public RouterExecutor(AIAgent routerAgent) : base("RouterExecutor")
+    {
+        _routerAgent = routerAgent;
+    }
+
+    public async ValueTask<RouterDecision> HandleAsync(ChatMessage message, IWorkflowContext context, CancellationToken cancellationToken = default)
+    {
+        // Store the question
+        var question = new Question
+        {
+            QuestionId = Guid.NewGuid().ToString("N"),
+            QuestionText = message.Text
+        };
+        await context.QueueStateUpdateAsync(question.QuestionId, question, scopeName: WorkflowStateConstants.QuestionStateScope, cancellationToken);
+
+        // Invoke the router agent
+        var response = await _routerAgent.RunAsync(message, cancellationToken: cancellationToken);
+        var routerDecision = JsonSerializer.Deserialize<RouterDecision>(response.Text);
+
+        if (routerDecision is null || routerDecision.Selected.Count == 0)
+        {
+            routerDecision = new RouterDecision
+            {
+                Selected = new List<string> { "Knowledge" },
+                Reason = "デフォルト選抜: 明確な専門領域が特定できませんでした。"
+            };
+        }
+
+        // Set the question ID
+        routerDecision.QuestionId = question.QuestionId;
+
+        // Emit event
+        await context.AddEventAsync(
+            new RouterEvent($"選抜された専門家: {string.Join(", ", routerDecision.Selected)} - 理由: {routerDecision.Reason}"),
+            cancellationToken
+        );
+
+        return routerDecision;
+    }
+}
+
+/// <summary>
+/// Specialist executor that provides domain-specific opinions.
+/// </summary>
+internal sealed class SpecialistExecutor : ReflectingExecutor<SpecialistExecutor>, IMessageHandler<RouterDecision, OpinionData>
+{
+    private readonly AIAgent _specialistAgent;
+    private readonly string _specialistName;
+
+    public SpecialistExecutor(AIAgent specialistAgent, string specialistName) : base($"{specialistName}Executor")
+    {
+        _specialistAgent = specialistAgent;
+        _specialistName = specialistName;
+    }
+
+    public async ValueTask<OpinionData> HandleAsync(RouterDecision message, IWorkflowContext context, CancellationToken cancellationToken = default)
+    {
+        // Get the question ID from router decision (we'll add it there)
+        var questionId = message.QuestionId;
+        
+        if (string.IsNullOrEmpty(questionId))
+        {
+            throw new InvalidOperationException("Question ID not found in router decision");
+        }
+        
+        var question = await context.ReadStateAsync<Question>(questionId, scopeName: WorkflowStateConstants.QuestionStateScope, cancellationToken);
+        
+        if (question is null)
+        {
+            throw new InvalidOperationException($"Question with ID {questionId} not found");
+        }
+
+        // Invoke the specialist agent
+        var response = await _specialistAgent.RunAsync(question.QuestionText, cancellationToken: cancellationToken);
+        var specialistOpinion = JsonSerializer.Deserialize<SpecialistOpinion>(response.Text);
+
+        var opinionData = new OpinionData
+        {
+            SpecialistName = _specialistName,
+            Opinion = specialistOpinion?.Opinion ?? string.Empty,
+            QuestionId = questionId
+        };
+
+        // Store the opinion
+        var opinionKey = $"{questionId}_{_specialistName}";
+        await context.QueueStateUpdateAsync(opinionKey, opinionData, scopeName: WorkflowStateConstants.OpinionsStateScope, cancellationToken);
+
+        // Emit event
+        await context.AddEventAsync(
+            new SpecialistEvent(_specialistName, $"意見生成完了: {opinionData.Opinion.Substring(0, Math.Min(50, opinionData.Opinion.Length))}..."),
+            cancellationToken
+        );
+
+        return opinionData;
+    }
+}
+
+/// <summary>
+/// Aggregator executor that consolidates all specialist opinions.
+/// </summary>
+internal sealed class AggregatorExecutor : ReflectingExecutor<AggregatorExecutor>, IMessageHandler<OpinionData>
+{
+    private readonly AIAgent _aggregatorAgent;
+
+    public AggregatorExecutor(AIAgent aggregatorAgent) : base("AggregatorExecutor")
+    {
+        _aggregatorAgent = aggregatorAgent;
+    }
+
+    public async ValueTask HandleAsync(OpinionData message, IWorkflowContext context, CancellationToken cancellationToken = default)
+    {
+        // Get the question
+        var question = await context.ReadStateAsync<Question>(message.QuestionId, scopeName: WorkflowStateConstants.QuestionStateScope, cancellationToken);
+
+        // Collect all opinions for this question
+        var allOpinions = new List<OpinionData>();
+        
+        // Try to read all possible specialist opinions
+        var specialistNames = new[] { "Contract", "Spend", "Negotiation", "Sourcing", "Knowledge", "Supplier" };
+        foreach (var name in specialistNames)
+        {
+            var opinionKey = $"{message.QuestionId}_{name}";
+            var opinion = await context.ReadStateAsync<OpinionData>(opinionKey, scopeName: WorkflowStateConstants.OpinionsStateScope, cancellationToken);
+            if (opinion is not null)
+            {
+                allOpinions.Add(opinion);
+            }
+        }
+
+        // Build the aggregation prompt
+        var opinionsSummary = string.Join("\n\n", allOpinions.Select(o =>
+            $"【{o.SpecialistName} の意見】\n{o.Opinion}"));
+
+        var aggregationPrompt = $"""
+質問: {question?.QuestionText}
 
 以下は各専門家の意見です:
 
 {opinionsSummary}
 
 これらの意見を統合し、構造化された最終回答を生成してください。
-""")
-    };
+""";
 
-    try
-    {
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        
-        var workflow = AgentWorkflowBuilder
-            .CreateHandoffBuilderWith(aggregatorAgent)
-            .Build();
+        // Invoke the aggregator agent
+        var response = await _aggregatorAgent.RunAsync(aggregationPrompt, cancellationToken: cancellationToken);
+        var aggregatedResponse = JsonSerializer.Deserialize<AggregatedResponse>(response.Text);
 
-        var workflowAgent = await workflow.AsAgentAsync("aggregator", "Aggregator");
-        var thread = workflowAgent.GetNewThread();
-
-        var finalOutputBuilder = new StringBuilder();
-        await foreach (var update in workflowAgent.RunStreamingAsync(messages, thread, cancellationToken: cts.Token))
+        if (aggregatedResponse is not null)
         {
-            if (!string.IsNullOrEmpty(update.Text))
+            var output = new StringBuilder();
+            output.AppendLine();
+            output.AppendLine("═══════════════════════════════════════════");
+            output.AppendLine("【最終回答】");
+            output.AppendLine("═══════════════════════════════════════════");
+            output.AppendLine();
+            output.AppendLine("## 結論");
+            output.AppendLine(aggregatedResponse.Conclusion);
+            output.AppendLine();
+            output.AppendLine("## 根拠");
+            foreach (var rationale in aggregatedResponse.Rationale)
             {
-                finalOutputBuilder.Append(update.Text);
+                output.AppendLine($"- {rationale}");
             }
+            output.AppendLine();
+            output.AppendLine("## 各専門家の所見");
+            output.AppendLine(aggregatedResponse.SpecialistInsights);
+            output.AppendLine();
+            output.AppendLine("## 推奨アクション");
+            foreach (var action in aggregatedResponse.RecommendedActions)
+            {
+                output.AppendLine($"- {action}");
+            }
+            output.AppendLine();
+            output.AppendLine("═══════════════════════════════════════════");
+
+            await context.YieldOutputAsync(output.ToString(), cancellationToken);
         }
-
-        var finalOutput = finalOutputBuilder.ToString();
-        activity?.SetTag("output.length", finalOutput.Length);
-        logger.LogInformation("Aggregator Executor 完了");
-
-        return finalOutput;
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Aggregator Executor エラー: {Message}", ex.Message);
-        activity?.SetTag("error", true);
-        return $"エラーが発生しました: {ex.Message}";
     }
 }
-
-// ==========================================
-// ヘルパー関数
-// ==========================================
-
-static string ExtractJson(string text)
-{
-    if (text.Contains("```json"))
-    {
-        var start = text.IndexOf("```json") + 7;
-        var end = text.IndexOf("```", start);
-        return text.Substring(start, end - start).Trim();
-    }
-    else if (text.Contains("```"))
-    {
-        var start = text.IndexOf("```") + 3;
-        var end = text.IndexOf("```", start);
-        return text.Substring(start, end - start).Trim();
-    }
-    else if (text.Contains("{"))
-    {
-        var start = text.IndexOf("{");
-        var end = text.LastIndexOf("}") + 1;
-        return text.Substring(start, end - start).Trim();
-    }
-    return text;
-}
-
-record RouterDecision(List<string> Selected, string Reason);
