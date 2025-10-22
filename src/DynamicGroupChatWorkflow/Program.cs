@@ -15,11 +15,11 @@ using System.Diagnostics;
 using System.Text;
 using ChatRole = Microsoft.Extensions.AI.ChatRole;
 
-// ƒRƒ“ƒ\[ƒ‹‚Ì•¶šƒGƒ“ƒR[ƒfƒBƒ“ƒO‚ğ UTF-8 ‚Éİ’è
+// ã‚³ãƒ³ã‚½ãƒ¼ãƒ«ã®æ–‡å­—ã‚¨ãƒ³ã‚³ãƒ¼ãƒ‡ã‚£ãƒ³ã‚°ã‚’ UTF-8 ã«è¨­å®š
 Console.OutputEncoding = Encoding.UTF8;
 Console.InputEncoding = Encoding.UTF8;
 
-// İ’è‚ğ“Ç‚İ‚Ş
+// è¨­å®šã‚’èª­ã¿è¾¼ã‚€
 var configuration = new ConfigurationBuilder()
     .SetBasePath(Directory.GetCurrentDirectory())
     .AddJsonFile("appsettings.json", optional: true)
@@ -27,14 +27,14 @@ var configuration = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .Build();
 
-// OpenTelemetry ‚ÆƒƒMƒ“ƒO‚ğİ’è
+// OpenTelemetry ã¨ãƒ­ã‚®ãƒ³ã‚°ã‚’è¨­å®š
 var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
     ?? Environment.GetEnvironmentVariable("APPLICATIONINSIGHTS_CONNECTION_STRING");
 
 var otlpEndpoint = configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT");
 
-// ‹ó•¶š—ñ‚Ìê‡‚àƒfƒtƒHƒ‹ƒg’l‚ğg—p
+// ç©ºæ–‡å­—åˆ—ã®å ´åˆã‚‚ãƒ‡ãƒ•ã‚©ãƒ«ãƒˆå€¤ã‚’ä½¿ç”¨
 if (string.IsNullOrEmpty(otlpEndpoint))
 {
     otlpEndpoint = "http://localhost:4317";
@@ -80,75 +80,62 @@ using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .Build();
 
 var logger = loggerFactory.CreateLogger<Program>();
-logger.LogInformation("=== ƒAƒvƒŠƒP[ƒVƒ‡ƒ“‹N“® ===");
-logger.LogInformation("ƒeƒŒƒƒgƒŠİ’è: OTLP Endpoint = {OtlpEndpoint}", otlpEndpoint);
+logger.LogInformation("=== ã‚¢ãƒ—ãƒªã‚±ãƒ¼ã‚·ãƒ§ãƒ³èµ·å‹• ===");
+logger.LogInformation("ãƒ†ãƒ¬ãƒ¡ãƒˆãƒªè¨­å®š: OTLP Endpoint = {OtlpEndpoint}", otlpEndpoint);
 if (!string.IsNullOrEmpty(appInsightsConnectionString))
 {
-    logger.LogInformation("Application Insights Ú‘±•¶š—ñ‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚·");
+    logger.LogInformation("Application Insights æ¥ç¶šæ–‡å­—åˆ—ãŒè¨­å®šã•ã‚Œã¦ã„ã¾ã™");
 }
 
-// ŠÂ‹«•Ï”‚ğİ’è‚©‚çæ“¾
+// ç’°å¢ƒå¤‰æ•°ã‚’è¨­å®šã‹ã‚‰å–å¾—
 var endpoint = configuration["environmentVariables:AZURE_OPENAI_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
-    ?? throw new InvalidOperationException("ŠÂ‹«•Ï” AZURE_OPENAI_ENDPOINT ‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚¹‚ñB");
+    ?? throw new InvalidOperationException("ç’°å¢ƒå¤‰æ•° AZURE_OPENAI_ENDPOINT ãŒè¨­å®šã•ã‚Œã¦ã„ã¾ã›ã‚“ã€‚");
 
 var deployment = configuration["environmentVariables:AZURE_OPENAI_DEPLOYMENT_NAME"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
-    ?? throw new InvalidOperationException("ŠÂ‹«•Ï” AZURE_OPENAI_DEPLOYMENT_NAME ‚ªİ’è‚³‚ê‚Ä‚¢‚Ü‚¹‚ñB");
+    ?? throw new InvalidOperationException("ç’°å¢ƒå¤‰æ•° AZURE_OPENAI_DEPLOYMENT_NAME ãŒè¨­å®šã•ã‚Œã¦ã„ã¾ã›ã‚“ã€‚");
 
-logger.LogInformation("ƒGƒ“ƒhƒ|ƒCƒ“ƒg: {Endpoint}", endpoint);
-logger.LogInformation("ƒfƒvƒƒCƒƒ“ƒg–¼: {DeploymentName}", deployment);
+logger.LogInformation("ã‚¨ãƒ³ãƒ‰ãƒã‚¤ãƒ³ãƒˆ: {Endpoint}", endpoint);
+logger.LogInformation("ãƒ‡ãƒ—ãƒ­ã‚¤ãƒ¡ãƒ³ãƒˆå: {DeploymentName}", deployment);
 
-logger.LogInformation("”FØî•ñ‚Ìæ“¾’†iAzure CLI ‚Ì‚İ‚ğg—pj...");
-var credential = new DefaultAzureCredential(new DefaultAzureCredentialOptions
-{
-    ExcludeEnvironmentCredential = true,
-    ExcludeManagedIdentityCredential = true,
-    ExcludeSharedTokenCacheCredential = true,
-    ExcludeVisualStudioCredential = true,
-    ExcludeVisualStudioCodeCredential = true,
-    ExcludeAzureCliCredential = false,  // Azure CLI ‚Ì‚İ—LŒø
-    ExcludeAzurePowerShellCredential = true,
-    ExcludeAzureDeveloperCliCredential = true,
-    ExcludeInteractiveBrowserCredential = true,
-    ExcludeWorkloadIdentityCredential = true
-});
-logger.LogInformation("”FØî•ñæ“¾Š®—¹");
-
+logger.LogInformation("èªè¨¼æƒ…å ±ã®å–å¾—ä¸­ï¼ˆAzure CLI ã‚’ä½¿ç”¨ï¼‰...");
+var credential = new AzureCliCredential();
+logger.LogInformation("èªè¨¼æƒ…å ±å–å¾—å®Œäº†");
 var openAIClient = new AzureOpenAIClient(new Uri(endpoint), credential);
 var chatClient = openAIClient.GetChatClient(deployment);
 IChatClient extensionsAIChatClient = chatClient.AsIChatClient();
 
-logger.LogInformation("=== Dynamic Group Chat Workflow ƒfƒ‚ ===");
+logger.LogInformation("=== Dynamic Group Chat Workflow ãƒ‡ãƒ¢ ===");
 // Keep user-facing prompt only; logger will output structured logs (also to console via exporter)
-Console.WriteLine("Router ‚ª“®“I‚Éê–å‰Æ‚ğ‘I”²‚µA•K—v‚É‰‚¶‚Äƒ†[ƒU[‚ÉˆÓŒ©‚ğ‹‚ß‚Ü‚·B");
-Console.WriteLine("¿–â‚ğ“ü—Í‚µ‚Ä‚­‚¾‚³‚¢B");
-Console.Write("¿–â> ");
+Console.WriteLine("Router ãŒå‹•çš„ã«å°‚é–€å®¶ã‚’é¸æŠœã—ã€å¿…è¦ã«å¿œã˜ã¦ãƒ¦ãƒ¼ã‚¶ãƒ¼ã«æ„è¦‹ã‚’æ±‚ã‚ã¾ã™ã€‚");
+Console.WriteLine("è³ªå•ã‚’å…¥åŠ›ã—ã¦ãã ã•ã„ã€‚");
+Console.Write("è³ªå•> ");
 var question = Console.ReadLine();
 
 if (string.IsNullOrWhiteSpace(question))
 {
-    logger.LogWarning("¿–â‚ª‹ó‚Å‚·B");
-    Console.WriteLine("¿–â‚ª‹ó‚Å‚·B");
+    logger.LogWarning("è³ªå•ãŒç©ºã§ã™ã€‚");
+    Console.WriteLine("è³ªå•ãŒç©ºã§ã™ã€‚");
     return;
 }
 
-logger.LogInformation("óM‚µ‚½¿–â: {Question}", question);
+logger.LogInformation("å—ä¿¡ã—ãŸè³ªå•: {Question}", question);
 
-// ƒG[ƒWƒFƒ“ƒgì¬
-logger.LogInformation("ƒG[ƒWƒFƒ“ƒg‚ğì¬’†...");
+// ã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆä½œæˆ
+logger.LogInformation("ã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆã‚’ä½œæˆä¸­...");
 var routerAgent = CreateRouterAgent(extensionsAIChatClient);
-var contractAgent = CreateSpecialistAgent(extensionsAIChatClient, "Contract", "Œ_–ñŠÖ˜A‚Ìê–å‰Æ");
-var spendAgent = CreateSpecialistAgent(extensionsAIChatClient, "Spend", "xo•ªÍ‚Ìê–å‰Æ");
-var negotiationAgent = CreateSpecialistAgent(extensionsAIChatClient, "Negotiation", "ŒğÂí—ª‚Ìê–å‰Æ");
-var sourcingAgent = CreateSpecialistAgent(extensionsAIChatClient, "Sourcing", "’²’Bí—ª‚Ìê–å‰Æ");
-var knowledgeAgent = CreateSpecialistAgent(extensionsAIChatClient, "Knowledge", "’m¯ŠÇ—‚Ìê–å‰Æ");
-var supplierAgent = CreateSpecialistAgent(extensionsAIChatClient, "Supplier", "ƒTƒvƒ‰ƒCƒ„[ŠÇ—‚Ìê–å‰Æ");
+var contractAgent = CreateSpecialistAgent(extensionsAIChatClient, "Contract", "å¥‘ç´„é–¢é€£ã®å°‚é–€å®¶");
+var spendAgent = CreateSpecialistAgent(extensionsAIChatClient, "Spend", "æ”¯å‡ºåˆ†æã®å°‚é–€å®¶");
+var negotiationAgent = CreateSpecialistAgent(extensionsAIChatClient, "Negotiation", "äº¤æ¸‰æˆ¦ç•¥ã®å°‚é–€å®¶");
+var sourcingAgent = CreateSpecialistAgent(extensionsAIChatClient, "Sourcing", "èª¿é”æˆ¦ç•¥ã®å°‚é–€å®¶");
+var knowledgeAgent = CreateSpecialistAgent(extensionsAIChatClient, "Knowledge", "çŸ¥è­˜ç®¡ç†ã®å°‚é–€å®¶");
+var supplierAgent = CreateSpecialistAgent(extensionsAIChatClient, "Supplier", "ã‚µãƒ—ãƒ©ã‚¤ãƒ¤ãƒ¼ç®¡ç†ã®å°‚é–€å®¶");
 var moderatorAgent = CreateModeratorAgent(extensionsAIChatClient);
-logger.LogInformation("ƒG[ƒWƒFƒ“ƒgì¬Š®—¹");
+logger.LogInformation("ã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆä½œæˆå®Œäº†");
 
-// ƒ[ƒNƒtƒ[\’z
-logger.LogInformation("ƒ[ƒNƒtƒ[‚ğ\’z’†...");
+// ãƒ¯ãƒ¼ã‚¯ãƒ•ãƒ­ãƒ¼æ§‹ç¯‰
+logger.LogInformation("ãƒ¯ãƒ¼ã‚¯ãƒ•ãƒ­ãƒ¼ã‚’æ§‹ç¯‰ä¸­...");
 var workflow = AgentWorkflowBuilder
     .CreateHandoffBuilderWith(routerAgent)
     .WithHandoffs(routerAgent, [contractAgent, spendAgent, negotiationAgent,
@@ -157,17 +144,17 @@ var workflow = AgentWorkflowBuilder
     .WithHandoffs([contractAgent, spendAgent, negotiationAgent,
                    sourcingAgent, knowledgeAgent, supplierAgent], routerAgent)
     .Build();
-logger.LogInformation("ƒ[ƒNƒtƒ[\’zŠ®—¹");
+logger.LogInformation("ãƒ¯ãƒ¼ã‚¯ãƒ•ãƒ­ãƒ¼æ§‹ç¯‰å®Œäº†");
 
-// ƒ[ƒNƒtƒ[Às
+// ãƒ¯ãƒ¼ã‚¯ãƒ•ãƒ­ãƒ¼å®Ÿè¡Œ
 var messages = new List<ChatMessage>
 {
     new ChatMessage(ChatRole.User, question)
 };
 
-logger.LogInformation("„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª");
-logger.LogInformation("ƒ[ƒNƒtƒ[ÀsŠJn");
-logger.LogInformation("„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª");
+logger.LogInformation("â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
+logger.LogInformation("ãƒ¯ãƒ¼ã‚¯ãƒ•ãƒ­ãƒ¼å®Ÿè¡Œé–‹å§‹");
+logger.LogInformation("â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
 
 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(300));
 
@@ -176,17 +163,17 @@ try
     using var workflowActivity = activitySource.StartActivity("Workflow: Dynamic Group Chat", ActivityKind.Internal);
     workflowActivity?.SetTag("initial.question", question);
 
-    logger.LogInformation("ƒ[ƒNƒtƒ[‚ğƒG[ƒWƒFƒ“ƒg‚É•ÏŠ·’†...");
+    logger.LogInformation("ãƒ¯ãƒ¼ã‚¯ãƒ•ãƒ­ãƒ¼ã‚’ã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆã«å¤‰æ›ä¸­...");
     var workflowAgent = await workflow.AsAgentAsync("workflow", "Dynamic Workflow");
-    logger.LogInformation("ƒG[ƒWƒFƒ“ƒg•ÏŠ·Š®—¹");
+    logger.LogInformation("ã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆå¤‰æ›å®Œäº†");
     workflowActivity?.SetTag("workflow.agent.id", workflowAgent.Id);
 
     var thread = workflowAgent.GetNewThread();
-    logger.LogInformation("ƒXƒŒƒbƒhì¬Š®—¹");
+    logger.LogInformation("ã‚¹ãƒ¬ãƒƒãƒ‰ä½œæˆå®Œäº†");
 
-    logger.LogInformation("ƒƒbƒZ[ƒW”: {MessageCount}", messages.Count);
-    logger.LogInformation("ƒƒbƒZ[ƒW“à—e: {MessageText}", messages[0].Text);
-    logger.LogInformation("ƒXƒgƒŠ[ƒ~ƒ“ƒOŠJn...");
+    logger.LogInformation("ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸æ•°: {MessageCount}", messages.Count);
+    logger.LogInformation("ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å†…å®¹: {MessageText}", messages[0].Text);
+    logger.LogInformation("ã‚¹ãƒˆãƒªãƒ¼ãƒŸãƒ³ã‚°é–‹å§‹...");
 
     var currentAgent = "";
     var messageCount = 0;
@@ -200,13 +187,13 @@ try
     await foreach (var update in workflowAgent.RunStreamingAsync(messages, thread, cancellationToken: cts.Token))
     {
         updateCount++;
-        // ƒG[ƒWƒFƒ“ƒg‚ª•Ï‚í‚Á‚½‚ç•\¦
+        // ã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆãŒå¤‰ã‚ã£ãŸã‚‰è¡¨ç¤º
         if (!string.IsNullOrEmpty(update.AgentId) && update.AgentId != currentAgent)
         {
-            // ƒ†[ƒU[“ü—Í‘Ò‚¿ƒ`ƒFƒbƒN
+            // ãƒ¦ãƒ¼ã‚¶ãƒ¼å…¥åŠ›å¾…ã¡ãƒã‚§ãƒƒã‚¯
             if (waitingForUserInput)
             {
-                logger.LogInformation("[ƒ†[ƒU[“ü—Í‚ğ‘Ò‹@] ¿–â: {Question}", pendingQuestion.ToString());
+                logger.LogInformation("[ãƒ¦ãƒ¼ã‚¶ãƒ¼å…¥åŠ›ã‚’å¾…æ©Ÿ] è³ªå•: {Question}", pendingQuestion.ToString());
                 if (agentActivity != null)
                 {
                     agentActivity.SetTag("message.length", currentMessage.Length);
@@ -215,22 +202,22 @@ try
                     agentActivity.Dispose();
                     agentActivity = null;
                 }
-                Console.WriteLine("\n„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª");
-                Console.WriteLine("?? ƒ†[ƒU[“ü—Í‚ª•K—v‚Å‚·");
-                Console.WriteLine("„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª");
-                Console.Write("\n‰ñ“š> ");
+                Console.WriteLine("Â¥nâ”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
+                Console.WriteLine("?? ãƒ¦ãƒ¼ã‚¶ãƒ¼å…¥åŠ›ãŒå¿…è¦ã§ã™");
+                Console.WriteLine("â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
+                Console.Write("Â¥nå›ç­”> ");
 
                 var userResponse = Console.ReadLine();
                 if (!string.IsNullOrWhiteSpace(userResponse))
                 {
                     messages.Add(new ChatMessage(ChatRole.User, userResponse));
-                    logger.LogInformation("[ƒ†[ƒU[“ü—ÍóM] ‰ñ“š: {Response}", userResponse);
+                    logger.LogInformation("[ãƒ¦ãƒ¼ã‚¶ãƒ¼å…¥åŠ›å—ä¿¡] å›ç­”: {Response}", userResponse);
                     workflowActivity?.AddEvent(new ActivityEvent("user-input-received", tags: new ActivityTagsCollection
                     {
                         { "user.input.length", userResponse.Length }
                     }));
 
-                    // ƒ[ƒNƒtƒ[‚ğÄÀs
+                    // ãƒ¯ãƒ¼ã‚¯ãƒ•ãƒ­ãƒ¼ã‚’å†å®Ÿè¡Œ
                     thread = workflowAgent.GetNewThread();
                     await foreach (var newUpdate in workflowAgent.RunStreamingAsync(messages, thread, cancellationToken: cts.Token))
                     {
@@ -247,12 +234,12 @@ try
                 pendingQuestion.Clear();
             }
 
-            // ‘O‚ÌƒƒbƒZ[ƒW‚ğo—Í
+            // å‰ã®ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã‚’å‡ºåŠ›
             if (currentMessage.Length > 0)
             {
                 var messageText = currentMessage.ToString();
                 var messagePreview = TruncateForTelemetry(messageText);
-                logger.LogInformation("[ƒƒbƒZ[ƒWŠ®—¹ #{MessageCount}] ƒG[ƒWƒFƒ“ƒg: {AgentId}, “à—e’·: {ContentLength}, “à—e: {Content}",
+                logger.LogInformation("[ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å®Œäº† #{MessageCount}] ã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆ: {AgentId}, å†…å®¹é•·: {ContentLength}, å†…å®¹: {Content}",
                     messageCount, currentAgent, currentMessage.Length, messageText);
                 if (agentActivity != null)
                 {
@@ -268,25 +255,25 @@ try
             currentAgent = update.AgentId;
             messageCount++;
 
-            logger.LogInformation("[ƒƒbƒZ[ƒWŠJn #{MessageCount}] ƒG[ƒWƒFƒ“ƒg–¼: {AgentName}, ƒG[ƒWƒFƒ“ƒgID: {AgentId}, ƒ[ƒ‹: {Role}",
-                messageCount, update.AuthorName ?? "•s–¾", update.AgentId, update.Role?.ToString() ?? "•s–¾");
+            logger.LogInformation("[ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸é–‹å§‹ #{MessageCount}] ã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆå: {AgentName}, ã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆID: {AgentId}, ãƒ­ãƒ¼ãƒ«: {Role}",
+                messageCount, update.AuthorName ?? "ä¸æ˜", update.AgentId, update.Role?.ToString() ?? "ä¸æ˜");
             var agentDisplayName = update.AuthorName ?? $"Agent {messageCount}";
             agentActivity = activitySource.StartActivity($"Agent Turn: {agentDisplayName} (#{messageCount})", ActivityKind.Internal);
-            agentActivity?.SetTag("agent.name", update.AuthorName ?? "•s–¾");
+            agentActivity?.SetTag("agent.name", update.AuthorName ?? "ä¸æ˜");
             agentActivity?.SetTag("agent.id", update.AgentId);
-            agentActivity?.SetTag("agent.role", update.Role?.ToString() ?? "•s–¾");
+            agentActivity?.SetTag("agent.role", update.Role?.ToString() ?? "ä¸æ˜");
             agentActivity?.SetTag("message.ordinal", messageCount);
 
             if (messageCount > maxMessages)
             {
-                logger.LogWarning("?? Å‘åƒƒbƒZ[ƒW” ({MaxMessages}) ‚É’B‚µ‚Ü‚µ‚½B", maxMessages);
+                logger.LogWarning("?? æœ€å¤§ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸æ•° ({MaxMessages}) ã«é”ã—ã¾ã—ãŸã€‚", maxMessages);
                 break;
             }
 
-            Console.WriteLine($"\n„ª„ª„ª {update.AuthorName ?? currentAgent} „ª„ª„ª");
+            Console.WriteLine($"Â¥nâ”â”â” {update.AuthorName ?? currentAgent} â”â”â”");
         }
 
-        // ƒeƒLƒXƒg‚ğ•\¦
+        // ãƒ†ã‚­ã‚¹ãƒˆã‚’è¡¨ç¤º
         if (!string.IsNullOrEmpty(update.Text))
         {
             Console.Write(update.Text);
@@ -297,20 +284,20 @@ try
                 { "token.length", update.Text.Length }
             }));
 
-            // Router ‚©‚ç‚Ì¿–â‚ğŒŸoiuHv‚ÅI‚í‚éê‡j
-            if (currentAgent == "router_agent" && update.Text.Contains("H"))
+            // Router ã‹ã‚‰ã®è³ªå•ã‚’æ¤œå‡ºï¼ˆã€Œï¼Ÿã€ã§çµ‚ã‚ã‚‹å ´åˆï¼‰
+            if (currentAgent == "router_agent" && update.Text.Contains("ï¼Ÿ"))
             {
                 waitingForUserInput = true;
             }
         }
     }
 
-    // ÅŒã‚ÌƒƒbƒZ[ƒW‚ğo—Í
+    // æœ€å¾Œã®ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã‚’å‡ºåŠ›
     if (currentMessage.Length > 0)
     {
         var messageText = currentMessage.ToString();
         var messagePreview = TruncateForTelemetry(messageText);
-        logger.LogInformation("[ƒƒbƒZ[ƒWŠ®—¹ #{MessageCount}] ƒG[ƒWƒFƒ“ƒg: {AgentId}, Š®‘S‚È“à—e’·: {ContentLength}, “à—e: {Content}",
+        logger.LogInformation("[ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸å®Œäº† #{MessageCount}] ã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆ: {AgentId}, å®Œå…¨ãªå†…å®¹é•·: {ContentLength}, å†…å®¹: {Content}",
             messageCount, currentAgent, currentMessage.Length, messageText);
         if (agentActivity != null)
         {
@@ -322,31 +309,31 @@ try
 
     workflowActivity?.SetTag("total.messages", messageCount);
     workflowActivity?.SetTag("total.updates", updateCount);
-    logger.LogInformation("ƒXƒgƒŠ[ƒ~ƒ“ƒOŠ®—¹BƒƒbƒZ[ƒW”: {MessageCount}", messageCount);
+    logger.LogInformation("ã‚¹ãƒˆãƒªãƒ¼ãƒŸãƒ³ã‚°å®Œäº†ã€‚ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸æ•°: {MessageCount}", messageCount);
     workflowActivity?.Stop();
 }
 catch (OperationCanceledException)
 {
-    logger.LogWarning("?? ƒ^ƒCƒ€ƒAƒEƒg: ƒ[ƒNƒtƒ[‚ªŠÔ“à‚ÉŠ®—¹‚µ‚Ü‚¹‚ñ‚Å‚µ‚½B");
+    logger.LogWarning("?? ã‚¿ã‚¤ãƒ ã‚¢ã‚¦ãƒˆ: ãƒ¯ãƒ¼ã‚¯ãƒ•ãƒ­ãƒ¼ãŒæ™‚é–“å†…ã«å®Œäº†ã—ã¾ã›ã‚“ã§ã—ãŸã€‚");
 }
 catch (Exception ex)
 {
-    logger.LogError(ex, "? ƒGƒ‰[: {ExceptionType}, ƒƒbƒZ[ƒW: {ErrorMessage}",
+    logger.LogError(ex, "? ã‚¨ãƒ©ãƒ¼: {ExceptionType}, ãƒ¡ãƒƒã‚»ãƒ¼ã‚¸: {ErrorMessage}",
         ex.GetType().Name, ex.Message);
     if (ex.InnerException != null)
     {
-        logger.LogError("“à•”ƒGƒ‰[: {InnerErrorMessage}", ex.InnerException.Message);
+        logger.LogError("å†…éƒ¨ã‚¨ãƒ©ãƒ¼: {InnerErrorMessage}", ex.InnerException.Message);
     }
 }
 
-logger.LogInformation("„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª");
-logger.LogInformation("ƒ[ƒNƒtƒ[ÀsŠ®—¹");
-logger.LogInformation("„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª„ª");
+logger.LogInformation("â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
+logger.LogInformation("ãƒ¯ãƒ¼ã‚¯ãƒ•ãƒ­ãƒ¼å®Ÿè¡Œå®Œäº†");
+logger.LogInformation("â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”");
 
-Console.WriteLine("Enter ƒL[‚ğ‰Ÿ‚µ‚ÄI—¹‚µ‚Ä‚­‚¾‚³‚¢...");
+Console.WriteLine("Enter ã‚­ãƒ¼ã‚’æŠ¼ã—ã¦çµ‚äº†ã—ã¦ãã ã•ã„...");
 Console.ReadLine();
 
-logger.LogInformation("=== ƒAƒvƒŠƒP[ƒVƒ‡ƒ“I—¹ ===");
+logger.LogInformation("=== ã‚¢ãƒ—ãƒªã‚±ãƒ¼ã‚·ãƒ§ãƒ³çµ‚äº† ===");
 
 static string TruncateForTelemetry(string content, int maxLength = 512)
 {
@@ -366,35 +353,35 @@ static string TruncateForTelemetry(string content, int maxLength = 512)
 static ChatClientAgent CreateRouterAgent(IChatClient chatClient)
 {
     var instructions = """
-‚ ‚È‚½‚Í’²’B—Ìˆæ‚Ìƒ‹[ƒ^[‚Å‚·B
+ã‚ãªãŸã¯èª¿é”é ˜åŸŸã®ãƒ«ãƒ¼ã‚¿ãƒ¼ã§ã™ã€‚
 
-–ğŠ„:
-1. ƒ†[ƒU[¿–â‚ğ•ªÍ‚µA•K—v‚Èê–å‰Æ‚ğ“®“I‚É‘I”²
-2. ê–å‰Æ‚Éƒnƒ“ƒhƒIƒt‚µ‚ÄˆÓŒ©‚ğûW
-3. ê–å‰Æ‚ÌˆÓŒ©‚ğ“¥‚Ü‚¦A‚³‚ç‚Éî•ñ‚ª•K—v‚©”»’f:
-   - ‘¼‚Ìê–å‰Æ‚ÌˆÓŒ©‚ª•K—v ¨ ‚»‚Ìê–å‰Æ‚Éƒnƒ“ƒhƒIƒt
-   - ƒ†[ƒU[‚Ì’Ç‰Áî•ñ‚ª•K—v ¨ ƒ†[ƒU[‚É¿–â‚µ‚Ä‚­‚¾‚³‚¢iuHv‚ÅI‚í‚é¿–â•¶j
-4. \•ª‚Èî•ñ‚ªW‚Ü‚Á‚½‚çAModerator Agent ‚Éƒnƒ“ƒhƒIƒt
+å½¹å‰²:
+1. ãƒ¦ãƒ¼ã‚¶ãƒ¼è³ªå•ã‚’åˆ†æã—ã€å¿…è¦ãªå°‚é–€å®¶ã‚’å‹•çš„ã«é¸æŠœ
+2. å°‚é–€å®¶ã«ãƒãƒ³ãƒ‰ã‚ªãƒ•ã—ã¦æ„è¦‹ã‚’åé›†
+3. å°‚é–€å®¶ã®æ„è¦‹ã‚’è¸ã¾ãˆã€ã•ã‚‰ã«æƒ…å ±ãŒå¿…è¦ã‹åˆ¤æ–­:
+   - ä»–ã®å°‚é–€å®¶ã®æ„è¦‹ãŒå¿…è¦ â†’ ãã®å°‚é–€å®¶ã«ãƒãƒ³ãƒ‰ã‚ªãƒ•
+   - ãƒ¦ãƒ¼ã‚¶ãƒ¼ã®è¿½åŠ æƒ…å ±ãŒå¿…è¦ â†’ ãƒ¦ãƒ¼ã‚¶ãƒ¼ã«è³ªå•ã—ã¦ãã ã•ã„ï¼ˆã€Œï¼Ÿã€ã§çµ‚ã‚ã‚‹è³ªå•æ–‡ï¼‰
+4. ååˆ†ãªæƒ…å ±ãŒé›†ã¾ã£ãŸã‚‰ã€Moderator Agent ã«ãƒãƒ³ãƒ‰ã‚ªãƒ•
 
-—˜—p‰Â”\‚ÈƒG[ƒWƒFƒ“ƒg:
-- Contract Agent (Œ_–ñŠÖ˜A)
-- Spend Agent (xo•ªÍ)
-- Negotiation Agent (ŒğÂí—ª)
-- Sourcing Agent (’²’Bí—ª)
-- Knowledge Agent (’m¯ŠÇ—)
-- Supplier Agent (ƒTƒvƒ‰ƒCƒ„[ŠÇ—)
-- Moderator Agent (ÅI“‡) © \•ª‚Èî•ñ‚ªW‚Ü‚Á‚½ê‡‚Ì‚İ
+åˆ©ç”¨å¯èƒ½ãªã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆ:
+- Contract Agent (å¥‘ç´„é–¢é€£)
+- Spend Agent (æ”¯å‡ºåˆ†æ)
+- Negotiation Agent (äº¤æ¸‰æˆ¦ç•¥)
+- Sourcing Agent (èª¿é”æˆ¦ç•¥)
+- Knowledge Agent (çŸ¥è­˜ç®¡ç†)
+- Supplier Agent (ã‚µãƒ—ãƒ©ã‚¤ãƒ¤ãƒ¼ç®¡ç†)
+- Moderator Agent (æœ€çµ‚çµ±åˆ) â† ååˆ†ãªæƒ…å ±ãŒé›†ã¾ã£ãŸå ´åˆã®ã¿
 
-Human-in-the-Loop ‚ÌƒKƒCƒhƒ‰ƒCƒ“:
-- ê–å‰Æ‚ÌˆÓŒ©‚ğ•·‚¢‚½Œ‹‰ÊAƒ†[ƒU[‚Ì’Ç‰Áî•ñi—\ZAŠúŒÀA—Dæ–€‚È‚Çj‚ª•K—v‚Èê‡:
-  ¿–â“à—e‚ğ–¾Šm‚É‹Lq‚µ‚Ä‚­‚¾‚³‚¢i—á: "—\Z‚ÌãŒÀ‚ğ‹³‚¦‚Ä‚­‚¾‚³‚¢B" "Šó–]‚·‚éŒ_–ñŠúŠÔ‚Í‰½”N‚Å‚·‚©H"j
-  ¿–â‚ÍuHv‚ÅI‚í‚é‚æ‚¤‚É‚µ‚Ä‚­‚¾‚³‚¢B
-- ƒ†[ƒU[‚©‚ç‚Ì‰ñ“š‚ğó‚¯æ‚Á‚½‚çA‚»‚ê‚ğ“¥‚Ü‚¦‚ÄŸ‚ÌƒAƒNƒVƒ‡ƒ“‚ğŒˆ’è
+Human-in-the-Loop ã®ã‚¬ã‚¤ãƒ‰ãƒ©ã‚¤ãƒ³:
+- å°‚é–€å®¶ã®æ„è¦‹ã‚’èã„ãŸçµæœã€ãƒ¦ãƒ¼ã‚¶ãƒ¼ã®è¿½åŠ æƒ…å ±ï¼ˆäºˆç®—ã€æœŸé™ã€å„ªå…ˆäº‹é …ãªã©ï¼‰ãŒå¿…è¦ãªå ´åˆ:
+  è³ªå•å†…å®¹ã‚’æ˜ç¢ºã«è¨˜è¿°ã—ã¦ãã ã•ã„ï¼ˆä¾‹: "äºˆç®—ã®ä¸Šé™ã‚’æ•™ãˆã¦ãã ã•ã„ã€‚" "å¸Œæœ›ã™ã‚‹å¥‘ç´„æœŸé–“ã¯ä½•å¹´ã§ã™ã‹ï¼Ÿ"ï¼‰
+  è³ªå•ã¯ã€Œï¼Ÿã€ã§çµ‚ã‚ã‚‹ã‚ˆã†ã«ã—ã¦ãã ã•ã„ã€‚
+- ãƒ¦ãƒ¼ã‚¶ãƒ¼ã‹ã‚‰ã®å›ç­”ã‚’å—ã‘å–ã£ãŸã‚‰ã€ãã‚Œã‚’è¸ã¾ãˆã¦æ¬¡ã®ã‚¢ã‚¯ã‚·ãƒ§ãƒ³ã‚’æ±ºå®š
 
-d—v:
-- •K‚¸“KØ‚ÈƒG[ƒWƒFƒ“ƒg‚Éƒnƒ“ƒhƒIƒt‚µ‚Ä‚­‚¾‚³‚¢
-- ‰ßè‚Èƒnƒ“ƒhƒIƒt‚Í”ğ‚¯‚Ä‚­‚¾‚³‚¢i’Êí‚Í2-3–¼‚Ìê–å‰Æ‚Å\•ªj
-- ƒ†[ƒU[‚Ö‚Ì¿–â‚Í–{“–‚É•K—v‚Èê‡‚Ì‚İi1‰ñ‚Ü‚Å„§j
+é‡è¦:
+- å¿…ãšé©åˆ‡ãªã‚¨ãƒ¼ã‚¸ã‚§ãƒ³ãƒˆã«ãƒãƒ³ãƒ‰ã‚ªãƒ•ã—ã¦ãã ã•ã„
+- éå‰°ãªãƒãƒ³ãƒ‰ã‚ªãƒ•ã¯é¿ã‘ã¦ãã ã•ã„ï¼ˆé€šå¸¸ã¯2-3åã®å°‚é–€å®¶ã§ååˆ†ï¼‰
+- ãƒ¦ãƒ¼ã‚¶ãƒ¼ã¸ã®è³ªå•ã¯æœ¬å½“ã«å¿…è¦ãªå ´åˆã®ã¿ï¼ˆ1å›ã¾ã§æ¨å¥¨ï¼‰
 """;
 
     return new ChatClientAgent(
@@ -407,17 +394,17 @@ Human-in-the-Loop ‚ÌƒKƒCƒhƒ‰ƒCƒ“:
 static ChatClientAgent CreateSpecialistAgent(IChatClient chatClient, string specialty, string description)
 {
     var instructions = $"""
-‚ ‚È‚½‚Í {description} ‚Æ‚µ‚Ä‰ñ“š‚µ‚Ü‚·B
+ã‚ãªãŸã¯ {description} ã¨ã—ã¦å›ç­”ã—ã¾ã™ã€‚
 
-–ğŠ„:
-- ê–å’m¯‚ğŠˆ—p‚µ‚Äƒ†[ƒU[‚Ì¿–â‚É“š‚¦‚é
-- ‰ï˜b—š—ğ‚É‘¼‚Ìê–å‰Æ‚ÌˆÓŒ©‚âƒ†[ƒU[‚Ì’Ç‰Áî•ñ‚ªŠÜ‚Ü‚ê‚Ä‚¢‚éê‡A‚»‚ê‚ç‚ğQl‚É‚·‚é
-- ‰ñ“š‚ªŠ®—¹‚µ‚½‚çA•K‚¸ Router Agent ‚Éƒnƒ“ƒhƒIƒt‚µ‚ÄŒ‹‰Ê‚ğ•ñ‚·‚é
+å½¹å‰²:
+- å°‚é–€çŸ¥è­˜ã‚’æ´»ç”¨ã—ã¦ãƒ¦ãƒ¼ã‚¶ãƒ¼ã®è³ªå•ã«ç­”ãˆã‚‹
+- ä¼šè©±å±¥æ­´ã«ä»–ã®å°‚é–€å®¶ã®æ„è¦‹ã‚„ãƒ¦ãƒ¼ã‚¶ãƒ¼ã®è¿½åŠ æƒ…å ±ãŒå«ã¾ã‚Œã¦ã„ã‚‹å ´åˆã€ãã‚Œã‚‰ã‚’å‚è€ƒã«ã™ã‚‹
+- å›ç­”ãŒå®Œäº†ã—ãŸã‚‰ã€å¿…ãš Router Agent ã«ãƒãƒ³ãƒ‰ã‚ªãƒ•ã—ã¦çµæœã‚’å ±å‘Šã™ã‚‹
 
-‰ñ“š‚ÌƒKƒCƒhƒ‰ƒCƒ“:
-- ŠÈŒ‰‚©‚Â‹ï‘Ì“I‚É‰ñ“ši2-3•¶’ö“xj
-- •K—v‚É‰‚¶‚ÄA‘¼‚Ìê–å‰Æ‚ÌˆÓŒ©‚Ö‚ÌŒ¾‹y‚à‰Â”\
-- •s–¾‚È“_‚ª‚ ‚ê‚ÎARouter Agent ‚É’Ç‰Áî•ñ‚Ì•K—v«‚ğ“`‚¦‚é
+å›ç­”ã®ã‚¬ã‚¤ãƒ‰ãƒ©ã‚¤ãƒ³:
+- ç°¡æ½”ã‹ã¤å…·ä½“çš„ã«å›ç­”ï¼ˆ2-3æ–‡ç¨‹åº¦ï¼‰
+- å¿…è¦ã«å¿œã˜ã¦ã€ä»–ã®å°‚é–€å®¶ã®æ„è¦‹ã¸ã®è¨€åŠã‚‚å¯èƒ½
+- ä¸æ˜ãªç‚¹ãŒã‚ã‚Œã°ã€Router Agent ã«è¿½åŠ æƒ…å ±ã®å¿…è¦æ€§ã‚’ä¼ãˆã‚‹
 """;
 
     return new ChatClientAgent(
@@ -430,32 +417,32 @@ static ChatClientAgent CreateSpecialistAgent(IChatClient chatClient, string spec
 static ChatClientAgent CreateModeratorAgent(IChatClient chatClient)
 {
     var instructions = """
-‚ ‚È‚½‚Íƒ‚ƒfƒŒ[ƒ^[‚Å‚·B
+ã‚ãªãŸã¯ãƒ¢ãƒ‡ãƒ¬ãƒ¼ã‚¿ãƒ¼ã§ã™ã€‚
 
-–ğŠ„:
-Router ‚©‚ç“n‚³‚ê‚½‰ï˜b—š—ğ‚ğ“Ç‚İA•¡”‚Ìê–å‰Æ‚ÌˆÓŒ©‚Æƒ†[ƒU[‚Ì’Ç‰Áî•ñ‚ğ“‡‚µ‚ÄÅI‰ñ“š‚ğ¶¬‚µ‚Ü‚·B
+å½¹å‰²:
+Router ã‹ã‚‰æ¸¡ã•ã‚ŒãŸä¼šè©±å±¥æ­´ã‚’èª­ã¿ã€è¤‡æ•°ã®å°‚é–€å®¶ã®æ„è¦‹ã¨ãƒ¦ãƒ¼ã‚¶ãƒ¼ã®è¿½åŠ æƒ…å ±ã‚’çµ±åˆã—ã¦æœ€çµ‚å›ç­”ã‚’ç”Ÿæˆã—ã¾ã™ã€‚
 
-—v‹–€:
-- Šeê–å‰Æ‚ÌŠŒ©‚ğ‘¸d‚µ‚È‚ª‚çAˆêŠÑ«‚Ì‚ ‚éŒ‹˜_‚ğ“±‚­
-- ƒ†[ƒU[‚ª’ñ‹Ÿ‚µ‚½’Ç‰Áî•ñ‚ğ“KØ‚É”½‰f‚·‚é
-- ‰ñ“š‚ÍˆÈ‰º‚ÌŒ`®‚Å\‘¢‰»:
+è¦æ±‚äº‹é …:
+- å„å°‚é–€å®¶ã®æ‰€è¦‹ã‚’å°Šé‡ã—ãªãŒã‚‰ã€ä¸€è²«æ€§ã®ã‚ã‚‹çµè«–ã‚’å°ã
+- ãƒ¦ãƒ¼ã‚¶ãƒ¼ãŒæä¾›ã—ãŸè¿½åŠ æƒ…å ±ã‚’é©åˆ‡ã«åæ˜ ã™ã‚‹
+- å›ç­”ã¯ä»¥ä¸‹ã®å½¢å¼ã§æ§‹é€ åŒ–:
 
-## Œ‹˜_
-[“‡‚³‚ê‚½Œ‹˜_]
+## çµè«–
+[çµ±åˆã•ã‚ŒãŸçµè«–]
 
-## ª‹’
-[Šeê–å‰Æ‚ÌˆÓŒ©‚Æƒ†[ƒU[“ü—Í‚ğ“¥‚Ü‚¦‚½ª‹’]
+## æ ¹æ‹ 
+[å„å°‚é–€å®¶ã®æ„è¦‹ã¨ãƒ¦ãƒ¼ã‚¶ãƒ¼å…¥åŠ›ã‚’è¸ã¾ãˆãŸæ ¹æ‹ ]
 
-## Šeê–å‰Æ‚ÌŠŒ©
-- Contract: [—v–ñ]
-- Negotiation: [—v–ñ]
+## å„å°‚é–€å®¶ã®æ‰€è¦‹
+- Contract: [è¦ç´„]
+- Negotiation: [è¦ç´„]
 ...
 
-## ƒ†[ƒU[‚©‚ç‚Ì’Ç‰Áî•ñ
-[ƒ†[ƒU[‚ª’ñ‹Ÿ‚µ‚½î•ñ‚Ì—v–ñiŠY“–‚·‚éê‡j]
+## ãƒ¦ãƒ¼ã‚¶ãƒ¼ã‹ã‚‰ã®è¿½åŠ æƒ…å ±
+[ãƒ¦ãƒ¼ã‚¶ãƒ¼ãŒæä¾›ã—ãŸæƒ…å ±ã®è¦ç´„ï¼ˆè©²å½“ã™ã‚‹å ´åˆï¼‰]
 
-## Ÿ‚ÌƒAƒNƒVƒ‡ƒ“
-[„§‚³‚ê‚éŸ‚ÌƒXƒeƒbƒv]
+## æ¬¡ã®ã‚¢ã‚¯ã‚·ãƒ§ãƒ³
+[æ¨å¥¨ã•ã‚Œã‚‹æ¬¡ã®ã‚¹ãƒ†ãƒƒãƒ—]
 """;
 
     return new ChatClientAgent(
