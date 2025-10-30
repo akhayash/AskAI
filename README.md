@@ -408,7 +408,35 @@ dotnet run
 # ブラウザで http://localhost:18888 を開く
 ```
 
+## GitHub Copilot カスタムエージェント 🆕
+
+このリポジトリには、開発を支援する5つのカスタムエージェントが定義されています：
+
+| エージェント | 専門分野 |
+|---------|---------|
+| **agent-framework-expert** | Microsoft Agent Frameworkの設計と実装 |
+| **test-expert** | .NETテストの戦略と実装 |
+| **documentation-expert** | 日本語・英語の技術ドキュメント作成 |
+| **dotnet-architecture-expert** | .NET 8/C#のアーキテクチャとベストプラクティス |
+| **azure-openai-expert** | Azure OpenAI ServiceとMicrosoft.Extensions.AI |
+
+**使用方法:**
+```
+@agent-framework-expert 新しいワークフローパターンを実装したい
+@test-expert このワークフローの単体テストを作成したい
+@documentation-expert READMEを更新したい
+```
+
+詳細は [GitHub Copilot カスタムエージェント ガイド](.github/agents/README.md) を参照してください。
+
 ## ドキュメント
+
+- [システム要件定義および基本設計](docs/system-requirements.md)
+- [ロギング設定ガイド](docs/logging-setup.md)
+- [コメント形式標準](docs/comment-format-standards.md)
+- [GitHub Copilot カスタムエージェント詳細ガイド](docs/custom-agents.md) 🆕
+- [GitHub Copilot カスタムエージェント クイックガイド](.github/agents/README.md) 🆕
+- [DynamicGroupChatWorkflow 詳細](src/DynamicGroupChatWorkflow/README.md)
 
 ### GitHub Copilot 向け
 - [🤖 GitHub Copilot Instructions](.github/copilot-instructions.md) - GitHub Copilot が参照するプロジェクトコンテキスト
