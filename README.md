@@ -410,8 +410,8 @@ dotnet run
 
 ## ドキュメント
 
-### Copilot Agent 向け
-- [📘 Copilot Context - コンテキスト情報](Docs/COPILOT_CONTEXT.md) - Copilot Agent 向けの包括的なコンテキスト情報
+### GitHub Copilot 向け
+- [🤖 GitHub Copilot Instructions](.github/copilot-instructions.md) - GitHub Copilot が参照するプロジェクトコンテキスト
 
 ### アーキテクチャ
 - [🏗️ クリーンアーキテクチャ](Docs/architecture/clean-architecture.md) - アーキテクチャの詳細説明

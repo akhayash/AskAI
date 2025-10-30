@@ -4,19 +4,7 @@
 
 ## 📚 ドキュメント構成
 
-### 🤖 Copilot Agent 向け
-
-開発作業を行う Copilot Agent が参照すべき主要なコンテキスト情報です。
-
-- **[COPILOT_CONTEXT.md](COPILOT_CONTEXT.md)**
-  - プロジェクト概要
-  - クリーンアーキテクチャの概要
-  - ロギングとテレメトリ
-  - ライブラリとバージョン情報
-  - フォルダ構成
-  - エージェント実装パターン
-  - 設定とデプロイ
-  - コーディング規約
+> **Note**: GitHub Copilot 向けのコンテキスト情報は [`.github/copilot-instructions.md`](../.github/copilot-instructions.md) を参照してください。
 
 ### 🏗️ Architecture (アーキテクチャ)
 
@@ -100,17 +88,14 @@
 
 ### 新しい開発者向け
 
-1. **[COPILOT_CONTEXT.md](COPILOT_CONTEXT.md)** を読んで、プロジェクト全体の概要を理解する
-2. **[clean-architecture.md](architecture/clean-architecture.md)** でアーキテクチャの詳細を学ぶ
-3. **[logging-setup.md](development/logging-setup.md)** でローカル開発環境をセットアップする
-4. **[coding-standards.md](development/coding-standards.md)** でコーディング規約を確認する
-5. 興味のあるワークフローの README を読んで実装を理解する
+1. **[clean-architecture.md](architecture/clean-architecture.md)** でアーキテクチャの詳細を学ぶ
+2. **[logging-setup.md](development/logging-setup.md)** でローカル開発環境をセットアップする
+3. **[coding-standards.md](development/coding-standards.md)** でコーディング規約を確認する
+4. 興味のあるワークフローの README を読んで実装を理解する
 
-### Copilot Agent 向け
+### GitHub Copilot 向け
 
-1. **[COPILOT_CONTEXT.md](COPILOT_CONTEXT.md)** を最初に読む
-2. 必要に応じて、architecture/ や development/ 配下の詳細ドキュメントを参照
-3. 特定のワークフローに関する作業の場合は、workflows/ 配下のドキュメントを参照
+GitHub Copilot は自動的に [`.github/copilot-instructions.md`](../.github/copilot-instructions.md) を参照します。このファイルにはプロジェクト全体のコンテキスト情報が含まれています。
 
 ## 📝 ドキュメント更新ガイドライン
 
@@ -125,7 +110,7 @@
 
 ### ドキュメントの配置
 
-- **Copilot 向けコンテキスト**: `Docs/COPILOT_CONTEXT.md`
+- **GitHub Copilot コンテキスト**: `.github/copilot-instructions.md`
 - **アーキテクチャ関連**: `Docs/architecture/`
 - **開発ガイド**: `Docs/development/`
 - **ワークフロー詳細**: `Docs/workflows/`
