@@ -434,10 +434,11 @@ dotnet run
 - [システム要件定義および基本設計](docs/system-requirements.md)
 - [ロギング設定ガイド](docs/logging-setup.md)
 - [コメント形式標準](docs/comment-format-standards.md)
-- [DynamicGroupChatWorkflow 詳細](src/DynamicGroupChatWorkflow/README.md) 🆕
+- [GitHub Copilot カスタムエージェント詳細ガイド](docs/custom-agents.md) 🆕
+- [GitHub Copilot カスタムエージェント クイックガイド](.github/agents/README.md) 🆕
+- [DynamicGroupChatWorkflow 詳細](src/DynamicGroupChatWorkflow/README.md)
 - [SelectiveGroupChatWorkflow 詳細](src/SelectiveGroupChatWorkflow/README.md)
 - [TaskBasedWorkflow 詳細](src/TaskBasedWorkflow/README.md)
-- [GitHub Copilot カスタムエージェント ガイド](.github/agents/README.md) 🆕
 
 ## ライセンス
 
