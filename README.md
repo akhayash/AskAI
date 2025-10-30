@@ -410,9 +410,24 @@ dotnet run
 
 ## ドキュメント
 
-- [システム要件定義および基本設計](docs/system-requirements.md)
-- [ロギング設定ガイド](docs/logging-setup.md)
-- [コメント形式標準](docs/comment-format-standards.md)
+### Copilot Agent 向け
+- [📘 Copilot Context - コンテキスト情報](Docs/COPILOT_CONTEXT.md) - Copilot Agent 向けの包括的なコンテキスト情報
+
+### アーキテクチャ
+- [🏗️ クリーンアーキテクチャ](Docs/architecture/clean-architecture.md) - アーキテクチャの詳細説明
+- [📋 システム要件定義および基本設計](Docs/architecture/system-requirements.md)
+
+### 開発ガイド
+- [📝 ロギング設定ガイド](Docs/development/logging-setup.md)
+- [✍️ コーディング標準](Docs/development/coding-standards.md)
+
+### ワークフロー詳細
+- [SelectiveGroupChatWorkflow 実装概要](Docs/workflows/implementation-summary.md)
+- [TaskBasedWorkflow 実装概要](Docs/workflows/task-workflow.md)
+- [GraphExecutor 調査結果](Docs/workflows/graph-executor-investigation.md)
+- [GraphExecutor サマリー](Docs/workflows/graph-executor-summary.md)
+
+### 各ワークフローの README
 - [DynamicGroupChatWorkflow 詳細](src/DynamicGroupChatWorkflow/README.md) 🆕
 - [SelectiveGroupChatWorkflow 詳細](src/SelectiveGroupChatWorkflow/README.md)
 - [TaskBasedWorkflow 詳細](src/TaskBasedWorkflow/README.md)
