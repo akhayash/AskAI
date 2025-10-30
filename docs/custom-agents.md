@@ -160,12 +160,16 @@ Coding Agentは、これらのカスタムエージェントを自動的に認�
 
 ### GitHub Copilot CLI
 
-コマンドラインから使用する場合：
+コマンドラインから使用する場合（GitHub CLIがカスタムエージェントをサポートしている場合）：
 
 ```bash
-gh copilot suggest --agent agent-framework-expert "新しいワークフローパターンを実装したい"
-gh copilot suggest --agent test-expert "このワークフローの単体テストを作成したい"
+# カスタムエージェントのサポート状況はGitHub CLIのバージョンによって異なります
+# 通常のCopilot提案は以下のように使用できます：
+gh copilot suggest "新しいワークフローパターンを実装したい"
+gh copilot explain "このコードの動作を説明してください"
 ```
+
+**注意:** GitHub CLIでのカスタムエージェントの使用方法は、GitHub CLIのバージョンやCopilot拡張機能の更新により変更される可能性があります。最新の使用方法については[GitHub CLI Copilotドキュメント](https://cli.github.com/manual/gh_copilot)を参照してください。
 
 ## カスタムエージェントの利点
 

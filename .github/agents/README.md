@@ -113,8 +113,9 @@ Azure OpenAI ServiceとMicrosoft.Extensions.AIの実装に特化したエージ�
 ```
 
 ### GitHub Copilot CLI
-```
-gh copilot suggest --agent カスタムエージェント名 "質問や依頼内容"
+```bash
+# GitHub CLIでのカスタムエージェントサポートはバージョンによって異なります
+gh copilot suggest "質問や依頼内容"
 ```
 
 ### Coding Agent
