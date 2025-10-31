@@ -34,17 +34,17 @@ public class SpecialistReviewExecutor : Executor<(ContractInfo Contract, List<Re
         var (instructions, agentId, agentName) = specialistType switch
         {
             "Legal" => (
-                "あなたは Legal (法務) 専門家です。法的リスク、コンプライアンス、規制要件、法的義務、知的財産権などの観点から契約を分析してください。簡潔で実用的な回答を心がけてください。",
+                "あなたは Legal (法務) 専門家です。法的リスク、コンプライアンス、規制要件、法的義務、知的財産権などの観点から契約を分析してください。簡潔で実用的な回答を心がけてください。必ず日本語で回答してください。",
                 "legal_agent",
                 "Legal Agent"
             ),
             "Finance" => (
-                "あなたは Finance (財務) 専門家です。財務影響、予算管理、ROI分析、キャッシュフロー、財務リスクなどの観点から契約を分析してください。簡潔で実用的な回答を心がけてください。",
+                "あなたは Finance (財務) 専門家です。財務影響、予算管理、ROI分析、キャッシュフロー、財務リスクなどの観点から契約を分析してください。簡潔で実用的な回答を心がけてください。必ず日本語で回答してください。",
                 "finance_agent",
                 "Finance Agent"
             ),
             "Procurement" => (
-                "あなたは Procurement (調達実務) 専門家です。調達プロセス、購買手続き、契約管理、サプライヤー管理、調達戦略などの観点から契約を分析してください。簡潔で実用的な回答を心がけてください。",
+                "あなたは Procurement (調達実務) 専門家です。調達プロセス、購買手続き、契約管理、サプライヤー管理、調達戦略などの観点から契約を分析してください。簡潔で実用的な回答を心がけてください。必ず日本語で回答してください。",
                 "procurement_agent",
                 "Procurement Agent"
             ),
