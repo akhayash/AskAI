@@ -303,40 +303,94 @@ public static class Program
 
     private static Workflow BuildWorkflow(IChatClient chatClient, ILogger? logger)
     {
-        // Executor群の作成
+        // === Phase 1: 契約分析 ===
         var analysisExecutor = new ContractAnalysisExecutor();
+
+        // === Phase 2: Fan-Out/Fan-In - 並列専門家レビュー ===
         var legalReviewer = new SpecialistReviewExecutor(chatClient, "Legal", "legal_reviewer", logger);
         var financeReviewer = new SpecialistReviewExecutor(chatClient, "Finance", "finance_reviewer", logger);
         var procurementReviewer = new SpecialistReviewExecutor(chatClient, "Procurement", "procurement_reviewer", logger);
-
-        // 注: 完全な実装では、ここで Fan-Out/Fan-In、Loop、HITL、Switchなどを構築します
-        // 現在は簡略版として基本的なフローのみ実装
-
         var aggregator = new ParallelReviewAggregator(logger);
-        var lowRiskApproval = new LowRiskApprovalExecutor(logger);
-        var highRiskRejection = new HighRiskRejectionExecutor(logger);
 
-        // ワークフローの構築
+        // === Phase 3: Switch - リスクベース分岐 ===
+        var lowRiskApproval = new LowRiskApprovalExecutor(logger);
+
+        // === Phase 4: Loop - 交渉反復 (中リスク用) ===
+        var negotiationStateInit = new NegotiationStateInitExecutor(logger);
+        var negotiationExecutor = new NegotiationExecutor(chatClient, logger);
+        var negotiationContext = new NegotiationContextExecutor(logger);
+        var negotiationResult = new NegotiationResultExecutor(logger);
+
+        // === Phase 5: HITL - 人間による最終判断 ===
+        var finalApprovalHITL = new HITLApprovalExecutor("final_approval", logger);
+        var escalationHITL = new HITLApprovalExecutor("escalation", logger);
+        var rejectionConfirmHITL = new HITLApprovalExecutor("rejection_confirm", logger);
+
+        // === ワークフロー構築 ===
         var builder = new WorkflowBuilder(analysisExecutor);
 
-        // 並列レビュー (簡略版: 順次実行)
+        // Fan-Out: 契約分析後、3人の専門家に並列に渡す
+        // 注: 現在のフレームワークでは順次実行になるが、構造上は並列を意図
         builder
             .AddEdge(analysisExecutor, legalReviewer)
-            .AddEdge(legalReviewer, financeReviewer)
-            .AddEdge(financeReviewer, procurementReviewer)
+            .AddEdge(analysisExecutor, financeReviewer)
+            .AddEdge(analysisExecutor, procurementReviewer);
+
+        // Fan-In: 3人のレビューを集約
+        builder
+            .AddEdge(legalReviewer, aggregator)
+            .AddEdge(financeReviewer, aggregator)
             .AddEdge(procurementReviewer, aggregator);
 
-        // リスク判定による分岐
+        // Switch: リスクスコアによる3方向分岐
         builder
+            // 低リスク (≤30): 即座に承認
             .AddEdge(aggregator, lowRiskApproval,
                 condition: ((ContractInfo, RiskAssessment)? data) =>
                     data.HasValue && data.Value.Item2.OverallRiskScore <= 30)
-            .AddEdge(aggregator, highRiskRejection,
+
+            // 中リスク (31-70): 交渉ループへ
+            .AddEdge(aggregator, negotiationStateInit,
+                condition: ((ContractInfo, RiskAssessment)? data) =>
+                    data.HasValue &&
+                    data.Value.Item2.OverallRiskScore > 30 &&
+                    data.Value.Item2.OverallRiskScore <= 70)
+
+            // 高リスク (>70): HITL確認へ
+            .AddEdge(aggregator, rejectionConfirmHITL,
+                condition: ((ContractInfo, RiskAssessment)? data) =>
+                    data.HasValue && data.Value.Item2.OverallRiskScore > 70);
+
+        // Loop: 交渉反復フロー
+        builder
+            // 状態初期化 → 交渉提案生成
+            .AddEdge(negotiationStateInit, negotiationExecutor)
+            // 交渉提案 → 評価 (状態から契約とリスクを取得)
+            .AddEdge(negotiationExecutor, negotiationContext)
+            // 評価結果 → リスク評価形式に変換
+            .AddEdge(negotiationContext, negotiationResult)
+
+            // ループバック: 継続 && 改善余地あり → 次の交渉へ
+            .AddEdge(negotiationContext, negotiationExecutor,
+                condition: ((ContractInfo, EvaluationResult)? data) =>
+                    data.HasValue && data.Value.Item2.ContinueNegotiation)
+
+            // ループ終了: 目標達成 → HITL最終承認
+            .AddEdge(negotiationResult, finalApprovalHITL,
+                condition: ((ContractInfo, RiskAssessment)? data) =>
+                    data.HasValue && data.Value.Item2.OverallRiskScore <= 30)
+
+            // ループ終了: 目標未達成 → HITLエスカレーション
+            .AddEdge(negotiationResult, escalationHITL,
                 condition: ((ContractInfo, RiskAssessment)? data) =>
                     data.HasValue && data.Value.Item2.OverallRiskScore > 30);
 
-        builder.WithOutputFrom(lowRiskApproval);
-        builder.WithOutputFrom(highRiskRejection);
+        // 出力設定: 各終端からの出力を許可
+        builder
+            .WithOutputFrom(lowRiskApproval)
+            .WithOutputFrom(finalApprovalHITL)
+            .WithOutputFrom(escalationHITL)
+            .WithOutputFrom(rejectionConfirmHITL);
 
         return builder.Build();
     }
