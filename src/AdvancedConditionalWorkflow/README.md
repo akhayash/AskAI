@@ -1,128 +1,183 @@
 # Advanced Conditional Workflow
 
-Microsoft Agent Framework の高度な機能 (Condition, Loop, HITL, Visualize, Multi-Selection) を統合した、契約レビュー → 自動交渉 → 承認プロセスのデモワークフローです。
+Microsoft Agent Framework の高度な機能 (Condition, Loop, HITL, Visualize, Multi-Selection) を統合した、契約レビュー → **AI 自動交渉** → **人間承認**プロセスの**完全実装**デモワークフローです。
 
 ## 📋 概要
 
-このワークフローは、調達ドメインにおける高額契約の自動レビュー・リスク評価・交渉・承認プロセスを実装しています。
+このワークフローは、調達ドメインにおける高額契約の自動レビュー・リスク評価・**AI 交渉**・**人間承認**プロセスを実装しています。
 
-### デモシナリオ: 「高額契約の自動レビュー・交渉・承認プロセス」
+### デモシナリオ: 「高額契約の自動レビュー・AI 交渉・承認プロセス」
 
-新規サプライヤーとの $500,000 の契約について:
+新規サプライヤーとの契約について、以下のフローで処理します:
 
-1. **契約分析** - 契約情報を分析
-2. **並列レビュー** - 法務・財務・調達の 3 専門家が順次レビュー (将来的に並列実行に拡張可能)
+1. **契約分析** - 契約情報を分析し初期リスク評価
+2. **Fan-Out/Fan-In** - 法務・財務・調達の 3 専門家が並列レビュー (構造上)
 3. **リスク評価** - 各専門家の意見を統合し、総合リスクスコアを計算
-4. **条件分岐** - リスクレベルに応じて自動判定
-   - 低リスク (0-30 点): 自動承認
-   - 中リスク (31-70 点): 交渉プロセスへ (将来実装)
-   - 高リスク (71-100 点): 自動却下
-5. **最終決定** - 結果を表示
+4. **Switch (条件分岐)** - リスクレベルに応じて自動判定
+   - **低リスク (≤30 点)**: 自動承認 ✅
+   - **中リスク (31-70 点)**: **交渉ループへ** ✅ **実装済み**
+   - **高リスク (>70 点)**: HITL 却下確認 ✅
+5. **Loop (交渉反復)** - Azure OpenAI による自動交渉提案と効果評価 (最大 3 回) ✅ **実装済み**
+6. **HITL (Human-in-the-Loop)** - コンソール経由の最終承認/エスカレーション/却下確認 ✅ **実装済み**
+7. **最終決定** - 構造化された結果を表示
 
-## 🎯 実装されている Agent Framework 機能
+## 🎯 実装済み Agent Framework 機能
 
-### 1. Conditional Edges (条件付きエッジ)
+### 1. ✅ Conditional Edges (条件付きエッジ)
 
 リスクスコアに基づいて、異なる処理パスに分岐します。
 
 ```csharp
+// Switch: 3方向分岐
 builder
     .AddEdge(aggregator, lowRiskApproval,
-        condition: (RiskAssessment? risk) => risk != null && risk.OverallRiskScore <= 30)
-    .AddEdge(aggregator, highRiskRejection,
-        condition: (RiskAssessment? risk) => risk != null && risk.OverallRiskScore > 30);
+        condition: ((ContractInfo, RiskAssessment)? data) =>
+            data.HasValue && data.Value.Item2.OverallRiskScore <= 30)
+    .AddEdge(aggregator, negotiationStateInit,
+        condition: ((ContractInfo, RiskAssessment)? data) =>
+            data.HasValue && data.Value.Item2.OverallRiskScore > 30 &&
+            data.Value.Item2.OverallRiskScore <= 70)
+    .AddEdge(aggregator, rejectionConfirmHITL,
+        condition: ((ContractInfo, RiskAssessment)? data) =>
+            data.HasValue && data.Value.Item2.OverallRiskScore > 70);
 ```
 
-### 2. Multi-Selection Routing (並列実行)
+### 2. ✅ Fan-Out/Fan-In (並列実行構造)
 
-将来実装予定: 複数の専門家を並列実行し、効率的にレビューを実施します。
+複数の専門家に並列レビュー構造を実装 (現在のフレームワークでは順次実行)。
 
 ```csharp
-// 将来実装予定
-builder.AddFanOutEdge(
-    analysisExecutor,
-    targets: [legalReviewer, financeReviewer, procurementReviewer],
-    partitioner: GetPartitioner()
-);
+// Fan-Out
+builder
+    .AddEdge(analysisExecutor, legalReviewer)
+    .AddEdge(analysisExecutor, financeReviewer)
+    .AddEdge(analysisExecutor, procurementReviewer);
+
+// Fan-In
+builder
+    .AddEdge(legalReviewer, aggregator)
+    .AddEdge(financeReviewer, aggregator)
+    .AddEdge(procurementReviewer, aggregator);
 ```
 
-### 3. Visualization (ワークフロー可視化)
+### 3. ✅ Loop (交渉反復ループ)
+
+中リスク契約に対して、AI 交渉提案と効果評価を最大 3 回反復します。
+
+```csharp
+// ループバック条件
+.AddEdge(negotiationContext, negotiationExecutor,
+    condition: ((ContractInfo, EvaluationResult)? data) =>
+        data.HasValue && data.Value.Item2.ContinueNegotiation)
+
+// ループ終了条件 (相互排他的)
+.AddEdge(negotiationContext, negotiationResult,
+    condition: ((ContractInfo, EvaluationResult)? data) =>
+        data.HasValue && !data.Value.Item2.ContinueNegotiation)
+```
+
+### 4. ✅ HITL (Human-in-the-Loop)
+
+最終承認、エスカレーション、却下確認でコンソール経由の人間判断を実装。
+
+```csharp
+// HITLExecutor による承認プロンプト
+Console.Write("承認しますか? [Y/N]: ");
+var response = Console.ReadLine();
+var approved = response?.Trim().ToUpperInvariant() == "Y";
+```
+
+### 5. ✅ Visualization (ワークフロー可視化)
 
 Mermaid 形式でワークフロー構造を自動出力します。
 
 ```csharp
 var mermaidDiagram = workflow.ToMermaidString();
-Console.WriteLine(mermaidDiagram);
+Logger.LogInformation("{MermaidDiagram}", mermaidDiagram);
 ```
 
-### 4. Loop (交渉ループ) - 将来実装予定
+### 6. ✅ OpenTelemetry 統合
 
-中リスク契約に対して、交渉エージェントと評価エージェント間でループし、目標リスクスコア達成まで最大 3 回反復します。
-
-### 5. HITL (Human-in-the-Loop) - 将来実装予定
-
-交渉不成立時や最終承認前に、人間の承認ゲートを設けます。
+分散トレーシング、ログ、メトリクスの完全な観測可能性を実装。
 
 ```csharp
-// 将来実装予定
-RequestPort approvalRequest = RequestPort.Create<ApprovalRequest, ApprovalResponse>("ApprovalRequired");
-```
-
-### 6. Checkpoint & Resume - 将来実装予定
-
-長時間処理や承認待ち状態をチェックポイントとして保存し、再開可能にします。
-
-```csharp
-// 将来実装予定
-await using Checkpointed<StreamingRun> checkpointedRun =
-    await InProcessExecution.StreamAsync(workflow, input, CheckpointManager.Default);
+using var activity = TelemetryHelper.StartActivity(
+    Program.ActivitySource,
+    "NegotiationEvaluation",
+    new Dictionary<string, object>
+    {
+        ["iteration"] = iteration,
+        ["new_risk_score"] = newRiskScore
+    });
 ```
 
 ## 🏗️ アーキテクチャ
 
+### 完全なワークフローフロー
+
+```text
+Phase 1: 契約分析
+  ContractInfo → ContractAnalysisExecutor → (ContractInfo, RiskAssessment)
+
+Phase 2: Fan-Out/Fan-In
+  ┌─→ Legal Reviewer ──────┐
+  │                         │
+  ├─→ Finance Reviewer ─────┤→ Aggregator → (ContractInfo, RiskAssessment)
+  │                         │
+  └─→ Procurement Reviewer ─┘
+
+Phase 3: Switch (リスクベース分岐)
+  ├─ [score ≤30]  → LowRiskApproval (自動承認)
+  ├─ [31-70]      → NegotiationLoop (交渉ループ)
+  └─ [>70]        → RejectionConfirmHITL (却下確認)
+
+Phase 4: Loop (交渉反復)
+  NegotiationStateInit (iteration=1)
+    → NegotiationExecutor (AI提案生成)
+    → NegotiationContext (効果評価)
+    ├─ [ContinueNegotiation=true]  → NegotiationExecutor (ループバック)
+    └─ [ContinueNegotiation=false] → NegotiationResult
+       ├─ [score ≤30] → FinalApprovalHITL
+       └─ [score >30] → EscalationHITL
+
+Phase 5: HITL (人間による最終判断)
+  各HITLエンドポイント → ユーザー入力 (Y/N) → FinalDecision
+```
+
 ### Executor 構成
 
-#### 1. ContractAnalysisExecutor
+#### Phase 1-2: 契約分析とレビュー
 
-契約情報を分析し、レビューが必要な専門分野を特定します。
+1. **ContractAnalysisExecutor** - 契約情報を分析し初期リスク評価
+2. **SpecialistReviewExecutor** - 3 専門家 (Legal/Finance/Procurement) による契約レビュー
+3. **ParallelReviewAggregator** - 複数レビューを統合し総合リスクスコアを計算
 
-#### 2. SpecialistReviewExecutor
+#### Phase 3: リスク分岐
 
-各専門家 (Legal, Finance, Procurement) が契約をレビューし、リスクスコアと推奨事項を提供します。
+4. **LowRiskApprovalExecutor** - 低リスク契約の自動承認
 
-- **Legal (法務)**: 法的リスク、コンプライアンス、規制要件
-- **Finance (財務)**: 財務影響、予算管理、ROI 分析
-- **Procurement (調達実務)**: 調達プロセス、購買手続き、契約管理
+#### Phase 4: 交渉ループ (実装済み)
 
-#### 3. ParallelReviewAggregator
+5. **NegotiationStateInitExecutor** - 交渉ループ初期化 (iteration=1)
+6. **NegotiationExecutor** - Azure OpenAI による交渉提案生成
+7. **NegotiationContextExecutor** - 提案効果評価とループ継続判定
+8. **NegotiationResultExecutor** - 評価結果を RiskAssessment 形式に変換
 
-複数の専門家レビューを統合し、総合的なリスク評価を行います。
+#### Phase 5: HITL (実装済み)
 
-- 平均リスクスコアを計算
-- リスクレベルを判定 (Low/Medium/High)
-- 全専門家の意見を集約したサマリーを生成
-
-#### 4. LowRiskApprovalExecutor / HighRiskRejectionExecutor
-
-リスクレベルに応じて、自動承認または自動却下を行います。
-
-#### 5. NegotiationExecutor (将来実装予定)
-
-リスク軽減のための交渉提案を生成します。
-
-#### 6. EvaluationExecutor (将来実装予定)
-
-交渉提案の効果を評価し、継続判定を行います。
+9. **HITLApprovalExecutor** - コンソール経由の人間承認
+   - `final_approval`: 最終承認 (交渉成功)
+   - `escalation`: エスカレーション (交渉未達成)
+   - `rejection_confirm`: 却下確認 (高リスク)
 
 ### データモデル
 
-- **ContractInfo**: 契約情報
-- **ReviewResult**: 専門家レビュー結果
-- **RiskAssessment**: 総合リスク評価
-- **NegotiationProposal**: 交渉提案 (将来実装)
-- **EvaluationResult**: 評価結果 (将来実装)
-- **ApprovalRequest/Response**: 承認要求/応答 (将来実装)
-- **FinalDecision**: 最終決定
+- **ContractInfo**: 契約情報 (サプライヤー、金額、条件など)
+- **ReviewResult**: 専門家レビュー結果 (スコア、推奨事項)
+- **RiskAssessment**: 総合リスク評価 (スコア、レベル、懸念事項)
+- **NegotiationProposal**: 交渉提案 (提案内容、目標スコア) ✅ 実装済み
+- **EvaluationResult**: 評価結果 (新スコア、継続判定) ✅ 実装済み
+- **FinalDecision**: 最終決定 (承認/却下、スコア、次のアクション)
 
 ## 🚀 実行方法
 
@@ -254,6 +309,9 @@ var riskLevel = overallRiskScore switch
 
 ## 📚 関連ドキュメント
 
+- **実装詳細**: [Docs/workflows/advanced-conditional-workflow.md](../../Docs/workflows/advanced-conditional-workflow.md)
+- **アーキテクチャ**: [Docs/architecture/clean-architecture.md](../../Docs/architecture/clean-architecture.md)
+- **ログセットアップ**: [Docs/development/logging-setup.md](../../Docs/development/logging-setup.md)
 - [Microsoft Agent Framework](https://learn.microsoft.com/ja-jp/dotnet/ai/quickstarts/quickstart-ai-chat-with-agents)
 - [Azure OpenAI サービス](https://learn.microsoft.com/ja-jp/azure/ai-services/openai/)
 - [OpenTelemetry .NET](https://opentelemetry.io/docs/languages/net/)
