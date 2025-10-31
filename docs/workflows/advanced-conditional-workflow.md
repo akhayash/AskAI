@@ -1,6 +1,6 @@
 # Advanced Conditional Workflow - 実装詳細
 
-> **関連**: [プロジェクト README](../../src/AdvancedConditionalWorkflow/README.md) | [Clean Architecture](../architecture/clean-architecture.md)
+> **関連**: [プロジェクトREADME](../../src/AdvancedConditionalWorkflow/README.md) | [Clean Architecture](../architecture/clean-architecture.md) | [ログセットアップ](../development/logging-setup.md)
 
 ## 概要
 

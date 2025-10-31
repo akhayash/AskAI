@@ -4,7 +4,7 @@ Microsoft Agent Framework を使用した、様々なワークフローパター
 
 ## 概要
 
-調達領域をユースケースとした、以下の5つのワークフローパターンを提供しています:
+調達領域をユースケースとした、以下の 5 つのワークフローパターンを提供しています:
 
 1. **GroupChatWorkflow**: ラウンドロビン方式の全員参加型グループチャット
 2. **HandoffWorkflow**: ハンドオフベースの動的な専門家選抜
@@ -18,13 +18,14 @@ Microsoft Agent Framework を使用した、様々なワークフローパター
 
 ### 1. TaskBasedWorkflow 🆕 **NEW**
 
-**最新の実装**で、Planner による動的タスク計画とWorker による順次実行を実現しています。
+**最新の実装**で、Planner による動的タスク計画と Worker による順次実行を実現しています。
 
 ```
 User → Planner (計画作成) → Workers (タスク実行) → Final Report
 ```
 
 **特徴:**
+
 - ✅ Planner が目標を分析してタスク計画を自動生成
 - ✅ 各タスクに担当専門家を自動割り当て
 - ✅ タスクボードで進捗を管理（Queued/Doing/Done/Blocked）
@@ -42,6 +43,7 @@ User → Router (選抜) → Specialists (並列) → Moderator (統合) → Fin
 ```
 
 **特徴:**
+
 - ✅ Router が必要な専門家だけを動的に選抜
 - ✅ 選抜された専門家が並列で意見を提供
 - ✅ Moderator が専門家の意見を統合して構造化された回答を生成
@@ -59,6 +61,7 @@ User → Router ⇔ Specialists (ハンドオフ) → Router (統合) → Final 
 ```
 
 **特徴:**
+
 - Router と各専門家間で双方向のハンドオフが可能
 - 専門家が他の専門家の意見を求める場合に Router 経由で連携
 - すべての専門家が利用可能
@@ -74,8 +77,9 @@ User → [All Specialists in Round-Robin] → Final Reply
 ```
 
 **特徴:**
+
 - 全専門家がラウンドロビン方式で順番に発言
-- 最大5ラウンドまで議論を継続
+- 最大 5 ラウンドまで議論を継続
 - すべての専門家の意見を収集
 
 **詳細:** [GroupChatWorkflow](src/GroupChatWorkflow)
@@ -89,6 +93,7 @@ User → Router (動的選抜) ↔️ Specialist Group (HITL) ↔️ Router (統
 ```
 
 **特徴:**
+
 - ✅ ユーザーの質問に対し、動的に専門家を選抜
 - ✅ Specialist Group による双方向ハンドオフと対話
 - ✅ HITL による人的承認・補足情報の取得
@@ -99,16 +104,16 @@ User → Router (動的選抜) ↔️ Specialist Group (HITL) ↔️ Router (統
 
 ## 専門家エージェント
 
-システムには以下の6つの専門家エージェントが含まれれていますが、DynamicGroupChatWorkflow では状況に応じて柔軟に追加・削除が可能です。
+システムには以下の 6 つの専門家エージェントが含まれれていますが、DynamicGroupChatWorkflow では状況に応じて柔軟に追加・削除が可能です。
 
-| エージェント | 役割 |
-|-----------|------|
-| **Contract** | 契約関連の専門家 |
-| **Spend** | 支出分析の専門家 |
-| **Negotiation** | 交渉戦略の専門家 |
-| **Sourcing** | 調達戦略の専門家 |
-| **Knowledge** | 知識管理の専門家 |
-| **Supplier** | サプライヤー管理の専門家 |
+| エージェント    | 役割                     |
+| --------------- | ------------------------ |
+| **Contract**    | 契約関連の専門家         |
+| **Spend**       | 支出分析の専門家         |
+| **Negotiation** | 交渉戦略の専門家         |
+| **Sourcing**    | 調達戦略の専門家         |
+| **Knowledge**   | 知識管理の専門家         |
+| **Supplier**    | サプライヤー管理の専門家 |
 
 ## アーキテクチャ
 
@@ -124,7 +129,7 @@ graph TB
     Supplier[Supplier Agent]
     Moderator[Moderator Agent]
     Final[最終回答]
-    
+
     User -->|質問| Router
     Router -->|選抜| Contract
     Router -->|選抜| Spend
@@ -154,17 +159,20 @@ graph TB
 ### 環境設定
 
 1. Azure CLI でログイン:
+
 ```bash
 az login
 ```
 
 2. 環境変数を設定:
+
 ```bash
 export AZURE_OPENAI_ENDPOINT="https://your-endpoint.openai.azure.com/"
 export AZURE_OPENAI_DEPLOYMENT_NAME="gpt-4o"
 ```
 
 3. （オプション）テレメトリ設定:
+
 ```bash
 # Aspire Dashboard を使用する場合（推奨）
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4317"
@@ -174,6 +182,7 @@ export APPLICATIONINSIGHTS_CONNECTION_STRING="InstrumentationKey=...;IngestionEn
 ```
 
 または、各プロジェクトの `appsettings.Development.json` に設定:
+
 ```json
 {
   "environmentVariables": {
@@ -340,37 +349,41 @@ Moderator Agent にハンドオフします。
 
 ## ワークフロー比較
 
-| 特徴 | DynamicGroupChat 🆕 | TaskBased | SelectiveGroupChat | Handoff | GroupChat |
-|-----|-------------------|-----------|-------------------|---------|-----------|
-| 専門家選抜 | ✅ 動的ハンドオフ | ✅ Plannerが割当 | ✅ 事前選抜 (JSON) | ✅ 動的ハンドオフ | ❌ 全員参加 |
-| タスク管理 | ❌ なし | ✅ タスクボード | ❌ なし | ❌ なし | ❌ なし |
-| 実行方式 | 順次ハンドオフ | 順次実行 | 並列実行 | 順次ハンドオフ | ラウンドロビン |
-| HITL | ✅ Human Agent | ❌ なし | ❌ なし | ❌ なし | ❌ なし |
-| 専門家間対話 | ✅ あり | ❌ なし | ❌ なし | ✅ あり | ✅ あり |
-| 統合機能 | ✅ Moderator | ✅ 最終レポート | ✅ Moderator | Router | なし |
-| 可視化 | ✅ 可能 | ⚠️ 部分的 | ❌ 困難 | ✅ 可能 | ✅ 可能 |
-| テレメトリ | ✅ OpenTelemetry | ❌ なし | ❌ なし | ✅ OpenTelemetry | ❌ なし |
-| 計画性 | ⭐⭐ | ⭐⭐⭐ | ⭐ | ⭐⭐ | ⭐ |
-| 柔軟性 | ⭐⭐⭐ | ⭐⭐ | ⭐ | ⭐⭐⭐ | ⭐ |
-| コスト効率 | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐ |
-| 応答時間 | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ | ⭐ |
-| 対話能力 | ⭐⭐⭐ | ⭐⭐ | ⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| 適用場面 | ユーザー入力が必要 | 複雑な目標の段階的達成 | 効率的な専門家活用 | 専門家間の対話が必要 | 全員の意見が必要 |
+| 特徴         | DynamicGroupChat 🆕 | TaskBased              | SelectiveGroupChat | Handoff              | GroupChat        |
+| ------------ | ------------------- | ---------------------- | ------------------ | -------------------- | ---------------- |
+| 専門家選抜   | ✅ 動的ハンドオフ   | ✅ Planner が割当      | ✅ 事前選抜 (JSON) | ✅ 動的ハンドオフ    | ❌ 全員参加      |
+| タスク管理   | ❌ なし             | ✅ タスクボード        | ❌ なし            | ❌ なし              | ❌ なし          |
+| 実行方式     | 順次ハンドオフ      | 順次実行               | 並列実行           | 順次ハンドオフ       | ラウンドロビン   |
+| HITL         | ✅ Human Agent      | ❌ なし                | ❌ なし            | ❌ なし              | ❌ なし          |
+| 専門家間対話 | ✅ あり             | ❌ なし                | ❌ なし            | ✅ あり              | ✅ あり          |
+| 統合機能     | ✅ Moderator        | ✅ 最終レポート        | ✅ Moderator       | Router               | なし             |
+| 可視化       | ✅ 可能             | ⚠️ 部分的              | ❌ 困難            | ✅ 可能              | ✅ 可能          |
+| テレメトリ   | ✅ OpenTelemetry    | ❌ なし                | ❌ なし            | ✅ OpenTelemetry     | ❌ なし          |
+| 計画性       | ⭐⭐                | ⭐⭐⭐                 | ⭐                 | ⭐⭐                 | ⭐               |
+| 柔軟性       | ⭐⭐⭐              | ⭐⭐                   | ⭐                 | ⭐⭐⭐               | ⭐               |
+| コスト効率   | ⭐⭐                | ⭐⭐                   | ⭐⭐⭐             | ⭐⭐                 | ⭐               |
+| 応答時間     | ⭐⭐                | ⭐⭐                   | ⭐⭐⭐             | ⭐⭐                 | ⭐               |
+| 対話能力     | ⭐⭐⭐              | ⭐⭐                   | ⭐⭐               | ⭐⭐⭐               | ⭐⭐             |
+| 適用場面     | ユーザー入力が必要  | 複雑な目標の段階的達成 | 効率的な専門家活用 | 専門家間の対話が必要 | 全員の意見が必要 |
 
 ### ワークフロー選択ガイド
 
 **質問: ユーザーの追加情報が必要か？**
+
 - **Yes** → `DynamicGroupChatWorkflow` 🆕
 
 **質問: 専門家間の対話が必要か？**
+
 - **Yes** → `HandoffWorkflow` または `GroupChatWorkflow`
 - **No** → 次へ
 
 **質問: 高速な応答が必要か？**
+
 - **Yes** → `SelectiveGroupChatWorkflow` (並列実行)
 - **No** → 次へ
 
 **質問: タスク管理が必要か？**
+
 - **Yes** → `TaskBasedWorkflow`
 - **No** → `HandoffWorkflow`
 
@@ -410,17 +423,18 @@ dotnet run
 
 ## GitHub Copilot カスタムエージェント 🆕
 
-このリポジトリには、開発を支援する5つのカスタムエージェントが定義されています：
+このリポジトリには、開発を支援する 5 つのカスタムエージェントが定義されています：
 
-| エージェント | 専門分野 |
-|---------|---------|
-| **agent-framework-expert** | Microsoft Agent Frameworkの設計と実装 |
-| **test-expert** | .NETテストの戦略と実装 |
-| **documentation-expert** | 日本語・英語の技術ドキュメント作成 |
-| **dotnet-architecture-expert** | .NET 8/C#のアーキテクチャとベストプラクティス |
-| **azure-openai-expert** | Azure OpenAI ServiceとMicrosoft.Extensions.AI |
+| エージェント                   | 専門分野                                        |
+| ------------------------------ | ----------------------------------------------- |
+| **agent-framework-expert**     | Microsoft Agent Framework の設計と実装          |
+| **test-expert**                | .NET テストの戦略と実装                         |
+| **documentation-expert**       | 日本語・英語の技術ドキュメント作成              |
+| **dotnet-architecture-expert** | .NET 8/C#のアーキテクチャとベストプラクティス   |
+| **azure-openai-expert**        | Azure OpenAI Service と Microsoft.Extensions.AI |
 
 **使用方法:**
+
 ```
 @agent-framework-expert 新しいワークフローパターンを実装したい
 @test-expert このワークフローの単体テストを作成したい
@@ -439,23 +453,29 @@ dotnet run
 - [DynamicGroupChatWorkflow 詳細](src/DynamicGroupChatWorkflow/README.md)
 
 ### GitHub Copilot 向け
+
 - [🤖 GitHub Copilot Instructions](.github/copilot-instructions.md) - GitHub Copilot が参照するプロジェクトコンテキスト
 
 ### アーキテクチャ
-- [🏗️ クリーンアーキテクチャ](Docs/architecture/clean-architecture.md) - アーキテクチャの詳細説明
-- [📋 システム要件定義および基本設計](Docs/architecture/system-requirements.md)
+
+- [🏗️ クリーンアーキテクチャ](docs/architecture/clean-architecture.md) - アーキテクチャの詳細説明
+- [📋 システム要件定義および基本設計](docs/architecture/system-requirements.md)
 
 ### 開発ガイド
-- [📝 ロギング設定ガイド](Docs/development/logging-setup.md)
-- [✍️ コーディング標準](Docs/development/coding-standards.md)
+
+- [📝 ロギング設定ガイド](docs/development/logging-setup.md)
+- [✍️ コーディング標準](docs/development/coding-standards.md)
 
 ### ワークフロー詳細
-- [SelectiveGroupChatWorkflow 実装概要](Docs/workflows/implementation-summary.md)
-- [TaskBasedWorkflow 実装概要](Docs/workflows/task-workflow.md)
-- [GraphExecutor 調査結果](Docs/workflows/graph-executor-investigation.md)
-- [GraphExecutor サマリー](Docs/workflows/graph-executor-summary.md)
+
+- [SelectiveGroupChatWorkflow 実装概要](docs/workflows/implementation-summary.md)
+- [TaskBasedWorkflow 実装概要](docs/workflows/task-workflow.md)
+- [GraphExecutor 調査結果](docs/workflows/graph-executor-investigation.md)
+- [GraphExecutor サマリー](docs/workflows/graph-executor-summary.md)
+- [AdvancedConditionalWorkflow 実装詳細](docs/workflows/advanced-conditional-workflow.md)
 
 ### 各ワークフローの README
+
 - [DynamicGroupChatWorkflow 詳細](src/DynamicGroupChatWorkflow/README.md) 🆕
 - [SelectiveGroupChatWorkflow 詳細](src/SelectiveGroupChatWorkflow/README.md)
 - [TaskBasedWorkflow 詳細](src/TaskBasedWorkflow/README.md)

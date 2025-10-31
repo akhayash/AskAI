@@ -173,7 +173,7 @@ AskAI/
 ├── docker-compose.yml                 # Docker Compose for Aspire Dashboard
 ├── .github/
 │   └── copilot-instructions.md       # This file
-├── Docs/                              # Documentation root
+├── docs/                              # Documentation root
 │   ├── architecture/                  # Architecture documentation
 │   ├── development/                   # Development guides
 │   └── workflows/                     # Workflow-specific documentation
@@ -191,7 +191,7 @@ AskAI/
 
 1. **Workflow Independence**: Each workflow is an independent project
 2. **Common Functionality**: Shared components in `Common` project
-3. **Documentation Structure**: Organized by purpose under `Docs/`
+3. **Documentation Structure**: Organized by purpose under `docs/`
 4. **README Separation**:
    - Top-level README: Overall project overview
    - Workflow README: Individual workflow details
@@ -399,9 +399,9 @@ Don't forget to add the new specialist to Router's instructions.
 When making significant changes, update:
 
 - `README.md` for user-facing changes
-- `Docs/architecture/` for architectural changes
-- `Docs/development/` for development process changes
-- `Docs/workflows/` for workflow-specific details
+- `docs/architecture/` for architectural changes
+- `docs/development/` for development process changes
+- `docs/workflows/` for workflow-specific details
 - This file (`.github/copilot-instructions.md`) for Copilot context changes
 
 ## Common Patterns to Follow
@@ -449,4 +449,4 @@ var endpoint = configuration["environmentVariables:AZURE_OPENAI_ENDPOINT"]
 
 ---
 
-**Note**: This file provides context for GitHub Copilot to understand the project structure, conventions, and patterns. For detailed documentation, refer to files in the `Docs/` directory.
+**Note**: This file provides context for GitHub Copilot to understand the project structure, conventions, and patterns. For detailed documentation, refer to files in the `docs/` directory.

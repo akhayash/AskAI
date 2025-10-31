@@ -309,9 +309,9 @@ var riskLevel = overallRiskScore switch
 
 ## 📚 関連ドキュメント
 
-- **実装詳細**: [Docs/workflows/advanced-conditional-workflow.md](../../Docs/workflows/advanced-conditional-workflow.md)
-- **アーキテクチャ**: [Docs/architecture/clean-architecture.md](../../Docs/architecture/clean-architecture.md)
-- **ログセットアップ**: [Docs/development/logging-setup.md](../../Docs/development/logging-setup.md)
+- **実装詳細**: [docs/workflows/advanced-conditional-workflow.md](../../docs/workflows/advanced-conditional-workflow.md)
+- **アーキテクチャ**: [docs/architecture/clean-architecture.md](../../docs/architecture/clean-architecture.md)
+- **ログセットアップ**: [docs/development/logging-setup.md](../../docs/development/logging-setup.md)
 - [Microsoft Agent Framework](https://learn.microsoft.com/ja-jp/dotnet/ai/quickstarts/quickstart-ai-chat-with-agents)
 - [Azure OpenAI サービス](https://learn.microsoft.com/ja-jp/azure/ai-services/openai/)
 - [OpenTelemetry .NET](https://opentelemetry.io/docs/languages/net/)
