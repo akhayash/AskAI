@@ -1,6 +1,8 @@
 // Copyright (c) Microsoft. All rights reserved.
 
+using System.Diagnostics;
 using AdvancedConditionalWorkflow.Models;
+using Common;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.Logging;
 
@@ -9,11 +11,9 @@ namespace AdvancedConditionalWorkflow.Executors;
 /// <summary>
 /// 交渉提案とリスク評価を結合して評価 Executor に渡す
 /// </summary>
-public class NegotiationContextExecutor : Executor<NegotiationProposal, (ContractInfo Contract, EvaluationResult Evaluation)>
+public class NegotiationContextExecutor : Executor<(ContractInfo Contract, RiskAssessment Risk, NegotiationProposal Proposal, int Iteration), (ContractInfo Contract, EvaluationResult Evaluation)>
 {
     private readonly ILogger? _logger;
-    private const string OriginalRiskKey = "OriginalRiskAssessment";
-    private const string ContractKey = "ContractInfo";
 
     public NegotiationContextExecutor(ILogger? logger = null, string id = "negotiation_context")
         : base(id)
@@ -22,55 +22,68 @@ public class NegotiationContextExecutor : Executor<NegotiationProposal, (Contrac
     }
 
     public override async ValueTask<(ContractInfo Contract, EvaluationResult Evaluation)> HandleAsync(
-        NegotiationProposal proposal,
+        (ContractInfo Contract, RiskAssessment Risk, NegotiationProposal Proposal, int Iteration) input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
-        // ワークフロー状態から元のリスク評価と契約情報を取得
-        var originalRisk = await context.ReadStateAsync<RiskAssessment>(OriginalRiskKey, cancellationToken: cancellationToken)
-            ?? throw new InvalidOperationException("Original risk assessment not found in state");
+        await Task.CompletedTask;
 
-        var contract = await context.ReadStateAsync<ContractInfo>(ContractKey, cancellationToken: cancellationToken)
-            ?? throw new InvalidOperationException("Contract info not found in state");
+        var (contract, originalRisk, proposal, iteration) = input;
+
+        using var activity = TelemetryHelper.StartActivity(
+            Program.ActivitySource,
+            "NegotiationEvaluation",
+            new Dictionary<string, object>
+            {
+                ["iteration"] = iteration,
+                ["proposal_count"] = proposal.Proposals.Count
+            });
+
+        _logger?.LogInformation("🔍 交渉提案の効果を評価中 (反復 {Iteration}/3)...", iteration);
+        _logger?.LogInformation("  提案数: {ProposalCount}件", proposal.Proposals.Count);
+        _logger?.LogInformation("  現在のリスクスコア: {CurrentScore}/100", originalRisk.OverallRiskScore);
+        _logger?.LogInformation("  目標リスクスコア: 30以下");
 
         // 交渉提案の効果を評価
         var riskReduction = proposal.Proposals.Count * 5; // 1提案あたり5ポイント削減
         var newRiskScore = Math.Max(0, originalRisk.OverallRiskScore - riskReduction);
 
-        // ランダム要素を追加
-        var random = new Random();
-        var randomAdjustment = random.Next(-5, 6);
-        newRiskScore = Math.Clamp(newRiskScore + randomAdjustment, 0, 100);
-
         var isImproved = newRiskScore < originalRisk.OverallRiskScore;
         var targetAchieved = newRiskScore <= proposal.TargetRiskScore;
-        var continueNegotiation = !targetAchieved && proposal.Iteration < 3;
+        var continueNegotiation = !targetAchieved && iteration < 3;
 
         var evaluationComment = GenerateEvaluationComment(
             originalRisk.OverallRiskScore,
             newRiskScore,
             targetAchieved,
-            proposal.Iteration);
+            iteration);
 
         var evaluation = new EvaluationResult
         {
-            Iteration = proposal.Iteration,
+            Iteration = iteration,
             IsImproved = isImproved,
             NewRiskScore = newRiskScore,
             EvaluationComment = evaluationComment,
             ContinueNegotiation = continueNegotiation
         };
 
-        _logger?.LogInformation(
-            "✓ 評価完了: 改善={IsImproved}, 新スコア={NewScore}, 継続={Continue}",
-            isImproved, newRiskScore, continueNegotiation);
+        _logger?.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        _logger?.LogInformation("📊 評価結果 (反復 {Iteration}/3)", iteration);
+        _logger?.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        _logger?.LogInformation("  元のリスクスコア: {OriginalScore}/100", originalRisk.OverallRiskScore);
+        _logger?.LogInformation("  新しいリスクスコア: {NewScore}/100", newRiskScore);
+        _logger?.LogInformation("  改善: {Improvement} ({Status})",
+            isImproved ? $"-{originalRisk.OverallRiskScore - newRiskScore}ポイント" : "なし",
+            isImproved ? "✅" : "❌");
+        _logger?.LogInformation("  目標達成: {TargetAchieved}", targetAchieved ? "✅ はい" : "❌ いいえ");
+        _logger?.LogInformation("  交渉継続: {ContinueNegotiation}", continueNegotiation ? "✅ はい" : "❌ いいえ");
+        _logger?.LogInformation("  コメント: {Comment}", evaluationComment);
 
-        // 次の反復のために更新されたリスク評価を保存
-        if (continueNegotiation)
-        {
-            var updatedRisk = originalRisk with { OverallRiskScore = newRiskScore };
-            await context.QueueStateUpdateAsync(OriginalRiskKey, updatedRisk, cancellationToken: cancellationToken);
-        }
+        activity?.SetTag("original_risk_score", originalRisk.OverallRiskScore);
+        activity?.SetTag("new_risk_score", newRiskScore);
+        activity?.SetTag("is_improved", isImproved);
+        activity?.SetTag("target_achieved", targetAchieved);
+        activity?.SetTag("continue_negotiation", continueNegotiation);
 
         return (contract, evaluation);
     }

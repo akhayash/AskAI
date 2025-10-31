@@ -1,7 +1,9 @@
 // Copyright (c) Microsoft. All rights reserved.
 
+using System.Diagnostics;
 using System.Text;
 using AdvancedConditionalWorkflow.Models;
+using Common;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.Logging;
 
@@ -27,6 +29,17 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
+        using var activity = TelemetryHelper.StartActivity(
+            Program.ActivitySource,
+            $"HITL_{_approvalType}",
+            new Dictionary<string, object>
+            {
+                ["approval_type"] = _approvalType,
+                ["risk_score"] = input.Risk.OverallRiskScore,
+                ["supplier"] = input.Contract.SupplierName,
+                ["contract_value"] = input.Contract.ContractValue
+            });
+
         await Task.CompletedTask;
 
         var (contract, risk) = input;
@@ -34,6 +47,7 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
         _logger?.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         _logger?.LogInformation("👤 HITL: 人間による承認が必要です");
         _logger?.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        _logger?.LogInformation("  承認タイプ: {ApprovalType}", GetApprovalTypeLabel());
 
         Console.WriteLine();
         Console.WriteLine("═══════════════════════════════════════════");
@@ -62,11 +76,16 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
         var response = Console.ReadLine()?.Trim().ToUpperInvariant();
         var approved = response == "Y" || response == "YES";
 
-        _logger?.LogInformation("👤 HITL結果: {Result}", approved ? "承認" : "却下");
+        activity?.SetTag("approved", approved);
+        activity?.SetTag("user_response", response ?? "");
+
+        TelemetryHelper.LogWithActivity(_logger, activity, LogLevel.Information,
+            "👤 HITL結果: {0} (タイプ: {1})",
+            approved ? "承認" : "却下", _approvalType);
 
         Console.WriteLine();
 
-        return new FinalDecision
+        var decision = new FinalDecision
         {
             Decision = GetDecisionLabel(approved),
             ContractInfo = contract,
@@ -74,6 +93,11 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
             DecisionSummary = GenerateSummary(approved, contract, risk),
             NextActions = GenerateNextActions(approved, risk)
         };
+
+        // 最終出力を発行
+        await context.YieldOutputAsync(decision, cancellationToken);
+
+        return decision;
     }
 
     private string GetApprovalTypeLabel() => _approvalType switch

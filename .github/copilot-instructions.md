@@ -56,6 +56,7 @@ All workflows implement OpenTelemetry-based observability:
 ### Log Message Standards
 
 #### Phase Separators
+
 ```csharp
 logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 logger.LogInformation("フェーズ 1: タイトル");
@@ -63,11 +64,13 @@ logger.LogInformation("━━━━━━━━━━━━━━━━━━━
 ```
 
 #### Status Messages
+
 - Success: `✓` or `✅`
 - Warning: `⚠️`
 - Error: `❌`
 
 #### Structured Logging (ALWAYS use this pattern)
+
 ```csharp
 // ✅ CORRECT: Structured parameters
 logger.LogInformation("タスク完了: {TaskId}, 担当: {AssignedWorker}", taskId, worker);
@@ -76,23 +79,71 @@ logger.LogInformation("タスク完了: {TaskId}, 担当: {AssignedWorker}", tas
 logger.LogInformation($"タスク完了: {taskId}, 担当: {worker}");
 ```
 
+### Activity Tracing with TelemetryHelper
+
+#### StartActivity Pattern
+
+```csharp
+using var activity = TelemetryHelper.StartActivity(
+    Program.ActivitySource,
+    "PhaseOrExecutorName",
+    new Dictionary<string, object>
+    {
+        ["key1"] = value1,
+        ["key2"] = value2
+    });
+```
+
+#### LogWithActivity Pattern
+
+```csharp
+// Logs to logger AND adds event to current Activity
+TelemetryHelper.LogWithActivity(
+    _logger,
+    activity,
+    LogLevel.Information,
+    "Message with {Param1} and {Param2}",
+    value1, value2);
+```
+
+#### Activity Best Practices
+
+1. **Scope**: Use `using var activity` for automatic cleanup
+2. **Naming**: Activity names should be descriptive (e.g., "NegotiationProposalGeneration")
+3. **Tags**: Include key context (iteration, risk_score, supplier, etc.)
+4. **Events**: Use `LogWithActivity` for important state changes
+5. **Hierarchy**: Activities automatically form parent-child relationships
+
+### Efficient Logging Practices
+
+1. **Keep code readable**: Use TelemetryHelper methods to avoid cluttering business logic
+2. **Log key state changes**: Initialization, transformation, decision points
+3. **Use structured parameters**: Always use `{ParameterName}` syntax
+4. **Separate sections**: Use `━━━` separators for major phase boundaries
+5. **Add Activity tags**: Include metrics that help with tracing and debugging
+6. **Batch related logs**: Group related information under one separator block
+
 ## Library Versions
 
 ### .NET Framework
+
 - **.NET**: 8.0
 - **Language**: C# 12
 - **SDK**: .NET 8 SDK or later
 
 ### Microsoft Agent Framework
+
 - **Microsoft.Agents.AI.Workflows**: 1.0.0-preview.251009.1
 
 ### AI and Machine Learning
+
 - **Microsoft.Extensions.AI**: 9.9.1
-- **Microsoft.Extensions.AI.OpenAI**: 9.9.1-*
+- **Microsoft.Extensions.AI.OpenAI**: 9.9.1-\*
 - **Azure.AI.OpenAI**: 2.1.0
 - **Azure.Identity**: 1.12.0
 
 ### Configuration and Logging
+
 - **Microsoft.Extensions.Configuration**: 9.0.0
 - **Microsoft.Extensions.Configuration.Json**: 9.0.0
 - **Microsoft.Extensions.Configuration.EnvironmentVariables**: 9.0.0
@@ -100,6 +151,7 @@ logger.LogInformation($"タスク完了: {taskId}, 担当: {worker}");
 - **Microsoft.Extensions.Logging.Console**: 9.0.0
 
 ### Telemetry (OpenTelemetry)
+
 - **OpenTelemetry**: 1.10.0
 - **OpenTelemetry.Exporter.Console**: 1.10.0
 - **OpenTelemetry.Exporter.OpenTelemetryProtocol**: 1.10.0
@@ -108,6 +160,7 @@ logger.LogInformation($"タスク完了: {taskId}, 担当: {worker}");
 - **Azure.Monitor.OpenTelemetry.Exporter**: 1.3.0
 
 ### Azure OpenAI Models
+
 - **gpt-4o**: High-quality responses for specialist agents and Moderator
 - **gpt-4o-mini**: Lightweight processing for Router and classification tasks
 
@@ -139,7 +192,7 @@ AskAI/
 1. **Workflow Independence**: Each workflow is an independent project
 2. **Common Functionality**: Shared components in `Common` project
 3. **Documentation Structure**: Organized by purpose under `Docs/`
-4. **README Separation**: 
+4. **README Separation**:
    - Top-level README: Overall project overview
    - Workflow README: Individual workflow details
 
@@ -149,8 +202,8 @@ AskAI/
 
 ```csharp
 static ChatClientAgent CreateSpecialistAgent(
-    IChatClient chatClient, 
-    string specialty, 
+    IChatClient chatClient,
+    string specialty,
     string description)
 {
     var instructions = $"""
@@ -226,6 +279,7 @@ export APPLICATIONINSIGHTS_CONNECTION_STRING="InstrumentationKey=...;IngestionEn
 ```
 
 ### Authentication
+
 - **Azure CLI**: Local authentication via `az login`
 - **DefaultAzureCredential**: Supports Managed Identity and Service Principal
 
@@ -343,6 +397,7 @@ Don't forget to add the new specialist to Router's instructions.
 ### Documentation Updates
 
 When making significant changes, update:
+
 - `README.md` for user-facing changes
 - `Docs/architecture/` for architectural changes
 - `Docs/development/` for development process changes
@@ -352,6 +407,7 @@ When making significant changes, update:
 ## Common Patterns to Follow
 
 ### Parallel Execution Pattern
+
 ```csharp
 var tasks = selectedSpecialists.Select(async specialist =>
 {
@@ -362,6 +418,7 @@ var results = await Task.WhenAll(tasks);
 ```
 
 ### Activity Tracing Pattern
+
 ```csharp
 using var activity = activitySource.StartActivity("Phase1_Router");
 activity?.SetTag("question", question);
@@ -369,6 +426,7 @@ activity?.SetTag("selected_count", selected.Count);
 ```
 
 ### Configuration Loading Pattern
+
 ```csharp
 var configuration = new ConfigurationBuilder()
     .SetBasePath(Directory.GetCurrentDirectory())

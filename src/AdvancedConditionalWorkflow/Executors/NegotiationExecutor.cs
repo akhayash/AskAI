@@ -13,7 +13,7 @@ namespace AdvancedConditionalWorkflow.Executors;
 /// <summary>
 /// 交渉提案を生成する Executor
 /// </summary>
-public class NegotiationExecutor : Executor<(ContractInfo Contract, RiskAssessment Risk, int Iteration), NegotiationProposal>
+public class NegotiationExecutor : Executor<(ContractInfo Contract, RiskAssessment Risk, int Iteration), (ContractInfo Contract, RiskAssessment Risk, NegotiationProposal Proposal, int Iteration)>
 {
     private readonly ChatClientAgent _agent;
     private readonly ILogger? _logger;
@@ -25,14 +25,26 @@ public class NegotiationExecutor : Executor<(ContractInfo Contract, RiskAssessme
         _logger = logger;
     }
 
-    public override async ValueTask<NegotiationProposal> HandleAsync(
+    public override async ValueTask<(ContractInfo Contract, RiskAssessment Risk, NegotiationProposal Proposal, int Iteration)> HandleAsync(
         (ContractInfo Contract, RiskAssessment Risk, int Iteration) input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
+        using var activity = Common.TelemetryHelper.StartActivity(
+            Program.ActivitySource,
+            "NegotiationProposalGeneration",
+            new Dictionary<string, object>
+            {
+                ["iteration"] = input.Iteration,
+                ["current_risk_score"] = input.Risk.OverallRiskScore,
+                ["supplier"] = input.Contract.SupplierName
+            });
+
         var (contract, risk, iteration) = input;
 
         _logger?.LogInformation("💼 交渉提案を生成中 (反復 {Iteration}/3)...", iteration);
+        _logger?.LogInformation("  現在のリスクスコア: {RiskScore}/100", risk.OverallRiskScore);
+        _logger?.LogInformation("  目標リスクスコア: 30以下");
 
         var concerns = risk.KeyConcerns != null && risk.KeyConcerns.Count > 0
             ? string.Join("\n", risk.KeyConcerns.Select((c, i) => $"{i + 1}. {c}"))
@@ -98,15 +110,24 @@ public class NegotiationExecutor : Executor<(ContractInfo Contract, RiskAssessme
             };
 
             _logger?.LogInformation("✓ {ProposalCount}件の交渉提案を生成しました", proposals.Count);
+            _logger?.LogInformation("  提案内容:");
+            foreach (var (proposal, index) in proposals.Select((p, i) => (p, i + 1)))
+            {
+                _logger?.LogInformation("    {Index}. {Proposal}", index, proposal);
+            }
+            _logger?.LogInformation("  根拠: {Rationale}", result.Rationale);
 
-            return result;
+            activity?.SetTag("proposal_count", proposals.Count);
+            activity?.SetTag("rationale", result.Rationale);
+
+            return (contract, risk, result, iteration);
         }
         catch (Exception ex)
         {
             _logger?.LogError(ex, "❌ 交渉提案のパースに失敗");
 
             // フォールバック
-            return new NegotiationProposal
+            var fallbackProposal = new NegotiationProposal
             {
                 Iteration = iteration,
                 Proposals = new List<string>
@@ -118,6 +139,8 @@ public class NegotiationExecutor : Executor<(ContractInfo Contract, RiskAssessme
                 TargetRiskScore = 30,
                 Rationale = "標準的なリスク軽減策"
             };
+
+            return (contract, risk, fallbackProposal, iteration);
         }
     }
 

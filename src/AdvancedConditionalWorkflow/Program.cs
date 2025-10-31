@@ -252,12 +252,22 @@ public static class Program
             Logger.LogInformation("ワークフロー実行開始");
             Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
+            // ワークフロー全体を包む親Activityを作成
+            using var workflowActivity = ActivitySource?.StartActivity("ContractReviewWorkflow");
+            workflowActivity?.SetTag("supplier", contract.SupplierName);
+            workflowActivity?.SetTag("contract_value", contract.ContractValue);
+            workflowActivity?.SetTag("pattern", patternLabel);
+            workflowActivity?.SetTag("pattern_index", actualIndex + 1);
+
             try
             {
                 await using var run = await InProcessExecution.StreamAsync(workflow, contract);
 
                 await foreach (var evt in run.WatchStreamAsync())
                 {
+                    // フレームワークイベントはTraceレベルで記録
+                    Logger.LogTrace("📍 イベント受信: {EventType}", evt.GetType().Name);
+
                     switch (evt)
                     {
                         case WorkflowOutputEvent outputEvent:
@@ -267,6 +277,8 @@ public static class Program
 
                             if (outputEvent.Data is FinalDecision decision)
                             {
+                                workflowActivity?.SetTag("final_decision", decision.Decision);
+                                workflowActivity?.SetTag("final_risk_score", decision.FinalRiskScore);
                                 DisplayFinalDecision(decision);
                             }
                             else
@@ -276,13 +288,36 @@ public static class Program
                             break;
 
                         case SuperStepCompletedEvent superStepEvent:
-                            Logger.LogInformation("SuperStep 完了");
+                            Logger.LogTrace("SuperStep 完了");
+                            break;
+
+                        default:
+                            // その他のすべてのイベントはTraceレベルで記録
+                            Logger.LogTrace("⚪ その他のイベント: {EventType}", evt.GetType().Name);
+                            try
+                            {
+                                var eventJson = JsonSerializer.Serialize(evt, new JsonSerializerOptions
+                                {
+                                    WriteIndented = false,
+                                    IgnoreReadOnlyProperties = false
+                                });
+                                Logger.LogTrace("   イベント詳細: {EventData}", eventJson);
+                            }
+                            catch (Exception jsonEx)
+                            {
+                                // JSON化できない場合は ToString()
+                                Logger.LogTrace("   イベント詳細 (ToString): {EventData}", evt.ToString());
+                                Logger.LogDebug("   JSON化失敗: {JsonError}", jsonEx.Message);
+                            }
                             break;
                     }
                 }
+
+                workflowActivity?.SetStatus(ActivityStatusCode.Ok);
             }
             catch (Exception ex)
             {
+                workflowActivity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                 Logger.LogError(ex, "❌ ワークフロー実行中にエラーが発生しました: パターン {PatternNumber}", actualIndex + 1);
             }
 
@@ -304,7 +339,7 @@ public static class Program
     private static Workflow BuildWorkflow(IChatClient chatClient, ILogger? logger)
     {
         // === Phase 1: 契約分析 ===
-        var analysisExecutor = new ContractAnalysisExecutor();
+        var analysisExecutor = new ContractAnalysisExecutor(logger);
 
         // === Phase 2: Fan-Out/Fan-In - 並列専門家レビュー ===
         var legalReviewer = new SpecialistReviewExecutor(chatClient, "Legal", "legal_reviewer", logger);
@@ -367,13 +402,16 @@ public static class Program
             .AddEdge(negotiationStateInit, negotiationExecutor)
             // 交渉提案 → 評価 (状態から契約とリスクを取得)
             .AddEdge(negotiationExecutor, negotiationContext)
-            // 評価結果 → リスク評価形式に変換
-            .AddEdge(negotiationContext, negotiationResult)
 
             // ループバック: 継続 && 改善余地あり → 次の交渉へ
             .AddEdge(negotiationContext, negotiationExecutor,
                 condition: ((ContractInfo, EvaluationResult)? data) =>
                     data.HasValue && data.Value.Item2.ContinueNegotiation)
+
+            // 評価結果 → リスク評価形式に変換 (ループ終了時のみ)
+            .AddEdge(negotiationContext, negotiationResult,
+                condition: ((ContractInfo, EvaluationResult)? data) =>
+                    data.HasValue && !data.Value.Item2.ContinueNegotiation)
 
             // ループ終了: 目標達成 → HITL最終承認
             .AddEdge(negotiationResult, finalApprovalHITL,
