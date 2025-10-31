@@ -234,12 +234,31 @@ docker compose up -d
 
 ```mermaid
 graph TD
-    contract_analysis --> legal_reviewer
-    legal_reviewer --> finance_reviewer
-    finance_reviewer --> procurement_reviewer
-    procurement_reviewer --> review_aggregator
-    review_aggregator -->|risk <= 30| low_risk_approval
-    review_aggregator -->|risk > 30| high_risk_rejection
+    Start[ContractInfo] --> Analysis[Phase1: ContractAnalysis]
+    Analysis --> Legal[Legal Reviewer]
+    Analysis --> Finance[Finance Reviewer]
+    Analysis --> Procurement[Procurement Reviewer]
+
+    Legal --> Aggregator[Phase2: Aggregator]
+    Finance --> Aggregator
+    Procurement --> Aggregator
+
+    Aggregator -->|score ≤ 30| LowRisk[Phase3: 低リスク自動承認]
+    Aggregator -->|31-70| NegInit[Phase4: 交渉初期化]
+    Aggregator -->|score > 70| RejectHITL[Phase5: 却下確認HITL]
+
+    NegInit --> NegExec[AI交渉提案生成]
+    NegExec --> NegCtx[効果評価]
+    NegCtx -->|継続| NegExec
+    NegCtx -->|終了| NegResult[交渉結果]
+
+    NegResult -->|score ≤ 30| ApprovalHITL[最終承認HITL]
+    NegResult -->|score > 30| EscalationHITL[エスカレーションHITL]
+
+    LowRisk --> Final[FinalDecision]
+    ApprovalHITL --> Final
+    EscalationHITL --> Final
+    RejectHITL --> Final
 ```
 
 ### デモ実行結果例
@@ -269,20 +288,30 @@ graph TD
 📊 3件のレビュー結果を統合中...
 ✓ リスク評価完了: レベル=Medium, スコア=45
 
-❌ 高リスク契約を自動却下
+🔄 中リスク契約 - AI交渉ループに進む
+
+━━ 交渉ループ (Iteration 1/3) ━━
+🤝 AI交渉提案生成中...
+✓ 3件の交渉提案を生成
+📊 効果評価: 45 → 30 (リスク削減15ポイント)
+✓ 目標達成 - 交渉成功
+
+━━ HITL: 最終承認 ━━
+承認しますか? [Y/N]: Y
+✓ 承認されました
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎉 ワークフロー完了
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 【最終決定】
-決定: Rejected
-最終リスクスコア: 45/100
-サマリー: リスクスコア 45/100 (高リスク) のため、却下されました。
+決定: Approved
+最終リスクスコア: 30/100 (初期45 → 交渉後30)
+サマリー: AI交渉によりリスクを軽減、人間承認を得て承認されました。
 次のアクション:
-  - サプライヤーへの却下通知
-  - 代替サプライヤーの検討
-  - 要件の見直し
+  - 契約締結手続きへ
+  - 改善提案のサプライヤーへの通知
+  - 契約管理システムへの登録
 ```
 
 ## 🔧 カスタマイズ
@@ -318,29 +347,20 @@ var riskLevel = overallRiskScore switch
 
 ## 🛣️ ロードマップ
 
-### Phase 2: 交渉ループの実装
+### ✅ 実装済み
 
-- [ ] NegotiationExecutor と EvaluationExecutor の統合
-- [ ] ループ条件の実装 (最大 3 回反復)
-- [ ] 交渉履歴の記録
+- [x] **Phase 1-3**: 基本ワークフロー (Conditional Edges, Fan-Out/Fan-In 構造, Switch)
+- [x] **Phase 4**: 交渉ループ (AI 提案生成, 効果評価, 最大 3 回反復)
+- [x] **Phase 5**: HITL (Human-in-the-Loop) (コンソール Y/N 承認, 3 種類の承認フロー)
+- [x] **可視化**: Mermaid 図自動生成
+- [x] **観測性**: OpenTelemetry 統合 (Aspire Dashboard 対応)
 
-### Phase 3: HITL (Human-in-the-Loop) の実装
+### 🔮 将来拡張予定
 
-- [ ] RequestPort による承認要求
-- [ ] コンソール Y/N 承認 UI
-- [ ] 承認履歴の記録
-
-### Phase 4: Checkpoint & Resume の実装
-
-- [ ] CheckpointManager の統合
-- [ ] 状態保存と復元機能
-- [ ] 長時間処理の中断・再開サポート
-
-### Phase 5: 真の並列実行 (Fan-Out/Fan-In)
-
-- [ ] Multi-Selection Partitioner の実装
-- [ ] 3 専門家の並列レビュー
-- [ ] 並列実行結果の集約
+- [ ] **Checkpoint & Resume**: CheckpointManager 統合、状態保存・復元
+- [ ] **真の並列実行**: Multi-Selection Partitioner で Fan-Out/Fan-In を実際に並列化
+- [ ] **交渉履歴管理**: 反復記録、改善提案の追跡
+- [ ] **RequestPort HITL**: フレームワーク標準の HITL パターン対応
 
 ## 📝 ライセンス
 
