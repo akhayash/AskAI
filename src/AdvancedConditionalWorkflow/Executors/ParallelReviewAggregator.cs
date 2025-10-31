@@ -59,6 +59,25 @@ public class ParallelReviewAggregator(ILogger? logger = null, string id = "revie
         _logger?.LogInformation("✓ リスク評価完了: レベル={RiskLevel}, スコア={RiskScore}",
             riskLevel, overallRiskScore);
 
+        // 評価詳細をログ出力
+        _logger?.LogInformation("  サマリー:");
+        foreach (var line in result.Summary?.Split('\n') ?? Array.Empty<string>())
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                _logger?.LogInformation("    {SummaryLine}", line.TrimStart());
+            }
+        }
+
+        if (result.KeyConcerns != null && result.KeyConcerns.Count > 0)
+        {
+            _logger?.LogInformation("  主要な懸念事項:");
+            foreach (var concern in result.KeyConcerns)
+            {
+                _logger?.LogInformation("    - {Concern}", concern);
+            }
+        }
+
         return (input.Contract, result);
     }
 

@@ -117,28 +117,49 @@ public static class Program
         Logger.LogInformation("✓ Azure OpenAI クライアント初期化完了");
         Console.WriteLine();
 
-        // デモ契約情報を作成
-        var sampleContract = new ContractInfo
+        // 3パターンの契約データを作成
+        var testContracts = new[]
         {
-            SupplierName = "Global Tech Solutions Inc.",
-            ContractValue = 500000m,
-            ContractTermMonths = 24,
-            PaymentTerms = "Net 30",
-            DeliveryTerms = "FOB Destination",
-            WarrantyPeriodMonths = 12,
-            HasPenaltyClause = false,
-            HasAutoRenewal = true,
-            Description = "クラウドインフラサービスの提供契約。24ヶ月の長期契約で自動更新条項あり。"
+            // パターン1: 低リスク契約 (ペナルティ条項あり、自動更新なし、短期)
+            new ContractInfo
+            {
+                SupplierName = "Reliable Goods Co.",
+                ContractValue = 100000m,
+                ContractTermMonths = 12,
+                PaymentTerms = "Net 30",
+                DeliveryTerms = "FOB Destination",
+                WarrantyPeriodMonths = 24,
+                HasPenaltyClause = true,
+                HasAutoRenewal = false,
+                Description = "標準的な物品供給契約。ペナルティ条項あり、自動更新なし。"
+            },
+            // パターン2: 中リスク契約 (標準的な条件)
+            new ContractInfo
+            {
+                SupplierName = "Standard Services Ltd.",
+                ContractValue = 300000m,
+                ContractTermMonths = 18,
+                PaymentTerms = "Net 45",
+                DeliveryTerms = "FOB Destination",
+                WarrantyPeriodMonths = 12,
+                HasPenaltyClause = true,
+                HasAutoRenewal = true,
+                Description = "サービス提供契約。標準的な条件。"
+            },
+            // パターン3: 高リスク契約 (ペナルティなし、自動更新あり、長期)
+            new ContractInfo
+            {
+                SupplierName = "Global Tech Solutions Inc.",
+                ContractValue = 500000m,
+                ContractTermMonths = 24,
+                PaymentTerms = "Net 30",
+                DeliveryTerms = "FOB Destination",
+                WarrantyPeriodMonths = 12,
+                HasPenaltyClause = false,
+                HasAutoRenewal = true,
+                Description = "クラウドインフラサービスの提供契約。24ヶ月の長期契約で自動更新条項あり。"
+            }
         };
-
-        Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Logger.LogInformation("デモ契約情報");
-        Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Logger.LogInformation("サプライヤー: {SupplierName}", sampleContract.SupplierName);
-        Logger.LogInformation("契約金額: ${ContractValue:N0}", sampleContract.ContractValue);
-        Logger.LogInformation("契約期間: {TermMonths}ヶ月", sampleContract.ContractTermMonths);
-        Logger.LogInformation("支払条件: {PaymentTerms}", sampleContract.PaymentTerms);
-        Console.WriteLine();
 
         // ワークフロー構築
         Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -152,52 +173,132 @@ public static class Program
         Logger.LogInformation("ワークフロー構造 (Mermaid図)");
         Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         var mermaidDiagram = workflow.ToMermaidString();
-        Console.WriteLine(mermaidDiagram);
+        Logger.LogInformation("{MermaidDiagram}", mermaidDiagram);
         Console.WriteLine();
 
         Logger.LogInformation("✓ ワークフロー構築完了");
         Console.WriteLine();
 
-        // ワークフロー実行
-        Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Logger.LogInformation("ワークフロー実行開始");
-        Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        // ユーザーに契約パターンを選択させる
+        Console.WriteLine();
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine("契約評価パターンの選択");
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine();
+        Console.WriteLine("評価する契約パターンを選択してください:");
+        Console.WriteLine();
+        Console.WriteLine("  [0] 全パターンを順次実行");
+        Console.WriteLine();
+        Console.WriteLine("  [1] 低リスク契約");
+        Console.WriteLine("      - サプライヤー: Reliable Goods Co.");
+        Console.WriteLine("      - 契約金額: $100,000");
+        Console.WriteLine("      - ペナルティ条項: あり");
+        Console.WriteLine("      - 自動更新: なし");
+        Console.WriteLine();
+        Console.WriteLine("  [2] 中リスク契約");
+        Console.WriteLine("      - サプライヤー: Standard Services Ltd.");
+        Console.WriteLine("      - 契約金額: $300,000");
+        Console.WriteLine("      - ペナルティ条項: あり");
+        Console.WriteLine("      - 自動更新: あり");
+        Console.WriteLine();
+        Console.WriteLine("  [3] 高リスク契約");
+        Console.WriteLine("      - サプライヤー: Global Tech Solutions Inc.");
+        Console.WriteLine("      - 契約金額: $500,000");
+        Console.WriteLine("      - ペナルティ条項: なし");
+        Console.WriteLine("      - 自動更新: あり");
+        Console.WriteLine();
+        Console.Write("選択 [0-3]: ");
 
-        try
+        var input = Console.ReadLine();
+        if (!int.TryParse(input, out var selection) || selection < 0 || selection > 3)
         {
-            await using var run = await InProcessExecution.StreamAsync(workflow, sampleContract);
+            Logger.LogWarning("無効な入力です。全パターンを実行します。");
+            selection = 0;
+        }
 
-            await foreach (var evt in run.WatchStreamAsync())
+        Console.WriteLine();
+
+        // 実行する契約を決定
+        var contractsToRun = selection == 0
+            ? testContracts
+            : new[] { testContracts[selection - 1] };
+
+        var startIndex = selection == 0 ? 0 : selection - 1;
+
+        // 選択されたパターンを実行
+        for (int i = 0; i < contractsToRun.Length; i++)
+        {
+            var contract = contractsToRun[i];
+            var actualIndex = selection == 0 ? i : startIndex;
+            var patternLabel = actualIndex switch
             {
-                switch (evt)
+                0 => "低リスク",
+                1 => "中リスク",
+                2 => "高リスク",
+                _ => "不明"
+            };
+
+            Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Logger.LogInformation("パターン {PatternNumber}: {PatternLabel} 契約の評価", actualIndex + 1, patternLabel);
+            Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Logger.LogInformation("サプライヤー: {SupplierName}", contract.SupplierName);
+            Logger.LogInformation("契約金額: ${ContractValue:N0}", contract.ContractValue);
+            Logger.LogInformation("契約期間: {TermMonths}ヶ月", contract.ContractTermMonths);
+            Logger.LogInformation("ペナルティ条項: {HasPenalty}", contract.HasPenaltyClause ? "あり" : "なし");
+            Logger.LogInformation("自動更新: {HasAutoRenewal}", contract.HasAutoRenewal ? "あり" : "なし");
+            Console.WriteLine();
+
+            Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Logger.LogInformation("ワークフロー実行開始");
+            Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+            try
+            {
+                await using var run = await InProcessExecution.StreamAsync(workflow, contract);
+
+                await foreach (var evt in run.WatchStreamAsync())
                 {
-                    case WorkflowOutputEvent outputEvent:
-                        Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-                        Logger.LogInformation("🎉 ワークフロー完了");
-                        Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                    switch (evt)
+                    {
+                        case WorkflowOutputEvent outputEvent:
+                            Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                            Logger.LogInformation("🎉 ワークフロー完了");
+                            Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
-                        if (outputEvent.Data is FinalDecision decision)
-                        {
-                            DisplayFinalDecision(decision);
-                        }
-                        else
-                        {
-                            Logger.LogInformation("出力: {Output}", outputEvent.Data);
-                        }
-                        break;
+                            if (outputEvent.Data is FinalDecision decision)
+                            {
+                                DisplayFinalDecision(decision);
+                            }
+                            else
+                            {
+                                Logger.LogInformation("出力: {Output}", outputEvent.Data);
+                            }
+                            break;
 
-                    case SuperStepCompletedEvent superStepEvent:
-                        Logger.LogInformation("SuperStep 完了");
-                        break;
+                        case SuperStepCompletedEvent superStepEvent:
+                            Logger.LogInformation("SuperStep 完了");
+                            break;
+                    }
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "❌ ワークフロー実行中にエラーが発生しました");
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "❌ ワークフロー実行中にエラーが発生しました: パターン {PatternNumber}", actualIndex + 1);
+            }
+
+            // 次のパターンとの間に区切り
+            if (i < contractsToRun.Length - 1)
+            {
+                Console.WriteLine();
+                Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+                Console.WriteLine();
+                await Task.Delay(1000); // 少し待機
+            }
         }
 
-        Logger.LogInformation("=== アプリケーション終了 ===");
+        Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Logger.LogInformation(selection == 0 ? "=== 全パターンの評価完了 ===" : "=== 評価完了 ===");
+        Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     }
 
     private static Workflow BuildWorkflow(IChatClient chatClient, ILogger? logger)

@@ -24,6 +24,8 @@ public class LowRiskApprovalExecutor(ILogger? logger = null, string id = "low_ri
         var (contract, risk) = input;
 
         _logger?.LogInformation("✅ 低リスク契約を自動承認");
+        _logger?.LogInformation("  契約: {SupplierName}", contract.SupplierName);
+        _logger?.LogInformation("  リスクスコア: {RiskScore}/100", risk.OverallRiskScore);
 
         var decision = new FinalDecision
         {
@@ -64,6 +66,17 @@ public class HighRiskRejectionExecutor(ILogger? logger = null, string id = "high
         var (contract, risk) = input;
 
         _logger?.LogInformation("❌ 高リスク契約を自動却下");
+        _logger?.LogInformation("  契約: {SupplierName}", contract.SupplierName);
+        _logger?.LogInformation("  リスクスコア: {RiskScore}/100", risk.OverallRiskScore);
+
+        if (risk.KeyConcerns != null && risk.KeyConcerns.Count > 0)
+        {
+            _logger?.LogInformation("  主要な懸念事項:");
+            foreach (var concern in risk.KeyConcerns.Take(3))
+            {
+                _logger?.LogInformation("    - {Concern}", concern);
+            }
+        }
 
         var concerns = risk.KeyConcerns != null && risk.KeyConcerns.Count > 0
             ? string.Join(", ", risk.KeyConcerns)
