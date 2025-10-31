@@ -20,7 +20,7 @@ public static class TelemetryHelper
     /// <param name="configuration">設定</param>
     /// <returns>LoggerFactory と TracerProvider のタプル</returns>
     public static (ILoggerFactory LoggerFactory, TracerProvider TracerProvider, ActivitySource ActivitySource) SetupTelemetry(
-        string serviceName, 
+        string serviceName,
         IConfiguration configuration)
     {
         var appInsightsConnectionString = configuration["APPLICATIONINSIGHTS_CONNECTION_STRING"]
@@ -97,5 +97,44 @@ public static class TelemetryHelper
             .AddJsonFile("appsettings.Development.json", optional: true)
             .AddEnvironmentVariables()
             .Build();
+    }
+
+    /// <summary>
+    /// Activity を開始し、タグを設定するヘルパーメソッド
+    /// </summary>
+    /// <param name="activitySource">ActivitySource</param>
+    /// <param name="activityName">Activity名</param>
+    /// <param name="tags">タグのディクショナリ</param>
+    /// <returns>開始されたActivity (using で自動終了)</returns>
+    public static Activity? StartActivity(
+        ActivitySource? activitySource,
+        string activityName,
+        Dictionary<string, object>? tags = null)
+    {
+        var activity = activitySource?.StartActivity(activityName);
+
+        if (activity != null && tags != null)
+        {
+            foreach (var (key, value) in tags)
+            {
+                activity.SetTag(key, value);
+            }
+        }
+
+        return activity;
+    }
+
+    /// <summary>
+    /// 構造化ログを記録し、Activity にイベントを追加するヘルパーメソッド
+    /// </summary>
+    public static void LogWithActivity(
+        ILogger? logger,
+        Activity? activity,
+        LogLevel level,
+        string message,
+        params object[] args)
+    {
+        logger?.Log(level, message, args);
+        activity?.AddEvent(new ActivityEvent(string.Format(message, args)));
     }
 }
