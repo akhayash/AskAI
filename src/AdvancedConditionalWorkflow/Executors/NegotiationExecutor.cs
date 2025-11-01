@@ -50,8 +50,8 @@ public class NegotiationExecutor : Executor<(ContractInfo Contract, RiskAssessme
             ? string.Join("\n", risk.KeyConcerns.Select((c, i) => $"{i + 1}. {c}"))
             : "特になし";
 
-        var penaltyClause = contract.HasPenaltyClause ? "あり" : "なし";
-        var autoRenewal = contract.HasAutoRenewal ? "あり" : "なし";
+        var penaltyClauseText = contract.HasPenaltyClause ? "あり" : "なし";
+        var autoRenewalText = contract.HasAutoRenewal ? "あり" : "なし";
 
         var prompt = $@"以下の契約について、リスクを軽減するための具体的な契約条件変更を提案してください。
 
@@ -62,8 +62,8 @@ public class NegotiationExecutor : Executor<(ContractInfo Contract, RiskAssessme
 - 支払条件: {contract.PaymentTerms}
 - 納品条件: {contract.DeliveryTerms}
 - 保証期間: {contract.WarrantyPeriodMonths}ヶ月
-- ペナルティ条項: {penaltyClause}
-- 自動更新: {autoRenewal}
+- ペナルティ条項: {penaltyClauseText}
+- 自動更新: {autoRenewalText}
 
 【リスク評価】
 - 総合リスクスコア: {risk.OverallRiskScore}/100

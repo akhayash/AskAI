@@ -413,6 +413,7 @@ public static class Program
         var negotiationStateInit = new NegotiationStateInitExecutor(logger);
         var negotiationExecutor = new NegotiationExecutor(chatClient, logger);
         var negotiationContext = new NegotiationContextExecutor(logger);
+        var negotiationLoopBack = new NegotiationLoopBackExecutor(logger);
         var negotiationResult = new NegotiationResultExecutor(logger);
 
         // === Phase 5: HITL - 人間による最終判断 ===
@@ -455,10 +456,11 @@ public static class Program
             // 交渉提案 → 評価 (状態から契約とリスクを取得)
             .AddEdge(negotiationExecutor, negotiationContext)
 
-            // ループバック: 継続 && 改善余地あり → 次の交渉へ
-            .AddEdge(negotiationContext, negotiationExecutor,
+            // ループバック: 継続 && 改善余地あり → ループバック処理 → 次の交渉へ
+            .AddEdge(negotiationContext, negotiationLoopBack,
                 condition: ((ContractInfo, EvaluationResult)? data) =>
                     data.HasValue && data.Value.Item2.ContinueNegotiation)
+            .AddEdge(negotiationLoopBack, negotiationExecutor)
 
             // 評価結果 → リスク評価形式に変換 (ループ終了時のみ)
             .AddEdge(negotiationContext, negotiationResult,
