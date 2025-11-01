@@ -22,8 +22,11 @@ public class WorkflowWebSocketServer : IDisposable
     private readonly SemaphoreSlim _hitlResponseSemaphore = new(0, 1);
     private HITLResponseMessage? _pendingHitlResponse;
 
+    private readonly int _port;
+
     public WorkflowWebSocketServer(int port = 8080, ILogger? logger = null)
     {
+        _port = port;
         _logger = logger;
         _httpListener = new HttpListener();
         _httpListener.Prefixes.Add($"http://localhost:{port}/");
@@ -37,7 +40,7 @@ public class WorkflowWebSocketServer : IDisposable
         _cancellationTokenSource = new CancellationTokenSource();
         _httpListener.Start();
         _listenerTask = Task.Run(() => ListenAsync(_cancellationTokenSource.Token));
-        _logger?.LogInformation("WebSocketサーバーを起動しました (Port: {Port})", 8080);
+        _logger?.LogInformation("WebSocketサーバーを起動しました (Port: {Port})", _port);
     }
 
     /// <summary>

@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Send, CheckCircle2, XCircle, Loader2, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Message, AgentUtteranceMessage, FinalResponseMessage, HITLRequestMessage } from "@/types/workflow";
+import type { Message, AgentUtteranceMessage, FinalResponseMessage, HITLRequestMessage, ErrorMessage } from "@/types/workflow";
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -13,8 +13,9 @@ export default function Home() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // WebSocket接続
-    const websocket = new WebSocket("ws://localhost:8080");
+    // WebSocket接続 (環境変数で設定可能)
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080";
+    const websocket = new WebSocket(wsUrl);
 
     websocket.onopen = () => {
       console.log("WebSocket connected");
@@ -154,13 +155,14 @@ export default function Home() {
         );
 
       case "error":
+        const errorMsg = message as ErrorMessage;
         return (
           <div key={message.messageId} className="mb-4 p-4 rounded-lg bg-red-50 border border-red-200">
             <div className="flex items-start gap-2">
               <XCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
               <div className="flex-1">
                 <span className="font-semibold text-red-900 block">Error</span>
-                <p className="text-red-700">{(message as any).error}</p>
+                <p className="text-red-700">{errorMsg.error}</p>
               </div>
             </div>
           </div>

@@ -29,6 +29,9 @@ public static class Program
 {
     internal static ActivitySource? ActivitySource;
     internal static ILogger? Logger;
+    
+    // Communication is initialized in Main() before any workflow execution
+    // and accessed only by Executors during workflow execution
     internal static Common.WebSocket.IWorkflowCommunication? Communication;
 
     private static async Task Main(string[] args)
