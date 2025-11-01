@@ -59,6 +59,13 @@ public class ParallelReviewAggregator(ILogger? logger = null, string id = "revie
         _logger?.LogInformation("✓ リスク評価完了: レベル={RiskLevel}, スコア={RiskScore}",
             riskLevel, overallRiskScore);
 
+        // エージェント発話をCommunicationに送信
+        await Program.Communication!.SendAgentUtteranceAsync(
+            "Risk Aggregator",
+            summary,
+            "Phase 3: Risk Assessment",
+            overallRiskScore);
+
         // 評価詳細をログ出力
         _logger?.LogInformation("  サマリー:");
         foreach (var line in result.Summary?.Split('\n') ?? Array.Empty<string>())
