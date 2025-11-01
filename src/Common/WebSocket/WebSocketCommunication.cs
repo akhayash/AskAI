@@ -144,4 +144,52 @@ public class WebSocketCommunication : IWorkflowCommunication
             _logger?.LogError("詳細: {Details}", details);
         }
     }
+
+    public async Task<int> RequestContractSelectionAsync(object[] contracts)
+    {
+        var contractOptions = contracts.Select((contract, index) =>
+        {
+            dynamic c = contract;
+            var label = index switch
+            {
+                0 => "低リスク契約",
+                1 => "中リスク契約",
+                2 => "高リスク契約",
+                _ => $"契約パターン {index + 1}"
+            };
+
+            return new ContractOption
+            {
+                Index = index,
+                Label = label,
+                SupplierName = c.SupplierName,
+                ContractValue = c.ContractValue,
+                ContractTermMonths = c.ContractTermMonths,
+                HasPenaltyClause = c.HasPenaltyClause,
+                HasAutoRenewal = c.HasAutoRenewal,
+                Description = c.Description
+            };
+        }).ToList();
+
+        var message = new ContractSelectionRequestMessage
+        {
+            Contracts = contractOptions
+        };
+
+        await _server.BroadcastAsync(message);
+
+        _logger?.LogInformation("契約選択要求を送信しました");
+
+        // WebSocketからの応答を待機 (タイムアウト: 5分)
+        var response = await _server.WaitForContractSelectionAsync(TimeSpan.FromMinutes(5));
+
+        if (response == null)
+        {
+            _logger?.LogWarning("契約選択応答がタイムアウトしました。デフォルトで最初の契約を選択します。");
+            return 0;
+        }
+
+        _logger?.LogInformation("契約選択応答を受信: Index {SelectedIndex}", response.SelectedIndex);
+        return response.SelectedIndex;
+    }
 }

@@ -21,8 +21,15 @@ public class WorkflowWebSocketServer : IDisposable
     private Task? _listenerTask;
     private readonly SemaphoreSlim _hitlResponseSemaphore = new(0, 1);
     private HITLResponseMessage? _pendingHitlResponse;
+    private readonly SemaphoreSlim _contractSelectionSemaphore = new(0, 1);
+    private ContractSelectionResponseMessage? _pendingContractSelection;
 
     private readonly int _port;
+
+    /// <summary>
+    /// 接続中のクライアント数
+    /// </summary>
+    public int ConnectedClientCount => _connectedClients.Count(ws => ws.State == WebSocketState.Open);
 
     public WorkflowWebSocketServer(int port = 8080, ILogger? logger = null)
     {
@@ -41,6 +48,17 @@ public class WorkflowWebSocketServer : IDisposable
         _httpListener.Start();
         _listenerTask = Task.Run(() => ListenAsync(_cancellationTokenSource.Token));
         _logger?.LogInformation("WebSocketサーバーを起動しました (Port: {Port})", _port);
+    }
+
+    /// <summary>
+    /// クライアントが接続するまで待機
+    /// </summary>
+    public async Task WaitForClientConnectionAsync(CancellationToken cancellationToken = default)
+    {
+        while (ConnectedClientCount == 0 && !cancellationToken.IsCancellationRequested)
+        {
+            await Task.Delay(100, cancellationToken);
+        }
     }
 
     /// <summary>
@@ -167,6 +185,15 @@ public class WorkflowWebSocketServer : IDisposable
                     _hitlResponseSemaphore.Release();
                 }
             }
+            else if (message?.Type == "contract_selection")
+            {
+                var contractSelection = JsonSerializer.Deserialize<ContractSelectionResponseMessage>(messageText);
+                if (contractSelection != null)
+                {
+                    _pendingContractSelection = contractSelection;
+                    _contractSelectionSemaphore.Release();
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -198,15 +225,40 @@ public class WorkflowWebSocketServer : IDisposable
     }
 
     /// <summary>
+    /// 契約選択応答を待機
+    /// </summary>
+    public async Task<ContractSelectionResponseMessage?> WaitForContractSelectionAsync(TimeSpan timeout)
+    {
+        var cts = new CancellationTokenSource(timeout);
+
+        try
+        {
+            await _contractSelectionSemaphore.WaitAsync(cts.Token);
+            var response = _pendingContractSelection;
+            _pendingContractSelection = null;
+            return response;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger?.LogWarning("契約選択応答のタイムアウト");
+            return null;
+        }
+    }
+
+    /// <summary>
     /// メッセージをすべてのクライアントにブロードキャスト
     /// </summary>
     public async Task BroadcastAsync(WorkflowMessage message)
     {
-        var json = JsonSerializer.Serialize(message, new JsonSerializerOptions
+        var json = JsonSerializer.Serialize(message, message.GetType(), new JsonSerializerOptions
         {
-            WriteIndented = false
+            WriteIndented = false,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         });
         var bytes = Encoding.UTF8.GetBytes(json);
+
+        // デバッグ用: 送信するJSONをログ出力
+        _logger?.LogDebug("Broadcasting message: {Json}", json);
 
         var tasks = new List<Task>();
 
@@ -231,6 +283,7 @@ public class WorkflowWebSocketServer : IDisposable
         _httpListener.Close();
         _cancellationTokenSource?.Dispose();
         _hitlResponseSemaphore.Dispose();
+        _contractSelectionSemaphore.Dispose();
         GC.SuppressFinalize(this);
     }
 }

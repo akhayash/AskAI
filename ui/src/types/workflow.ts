@@ -12,9 +12,33 @@ export interface AgentUtteranceMessage extends WorkflowMessage {
   riskScore?: number;
 }
 
+export interface ContractInfo {
+  supplier_name: string;
+  contract_value: number;
+  contract_term_months: number;
+  payment_terms: string;
+  delivery_terms: string;
+  warranty_period_months: number;
+  penalty_clause: boolean;
+  auto_renewal: boolean;
+  description?: string;
+}
+
+export interface FinalDecision {
+  decision: string;
+  contract_info: ContractInfo;
+  original_contract_info?: ContractInfo;
+  final_risk_score: number;
+  original_risk_score?: number;
+  decision_summary: string;
+  next_actions?: string[];
+  negotiation_history?: any[];
+  evaluation_history?: any[];
+}
+
 export interface FinalResponseMessage extends WorkflowMessage {
   type: "final_response";
-  decision: any;
+  decision: FinalDecision;
   summary: string;
 }
 
@@ -33,7 +57,7 @@ export interface WorkflowStartMessage extends WorkflowMessage {
 
 export interface WorkflowCompleteMessage extends WorkflowMessage {
   type: "workflow_complete";
-  finalDecision: any;
+  finalDecision: FinalDecision;
 }
 
 export interface ErrorMessage extends WorkflowMessage {
@@ -42,10 +66,27 @@ export interface ErrorMessage extends WorkflowMessage {
   details?: string;
 }
 
-export type Message = 
+export interface ContractOption {
+  index: number;
+  label: string;
+  supplierName: string;
+  contractValue: number;
+  contractTermMonths: number;
+  hasPenaltyClause: boolean;
+  hasAutoRenewal: boolean;
+  description: string;
+}
+
+export interface ContractSelectionRequestMessage extends WorkflowMessage {
+  type: "contract_selection_request";
+  contracts: ContractOption[];
+}
+
+export type Message =
   | AgentUtteranceMessage
   | FinalResponseMessage
   | HITLRequestMessage
   | WorkflowStartMessage
   | WorkflowCompleteMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | ContractSelectionRequestMessage;

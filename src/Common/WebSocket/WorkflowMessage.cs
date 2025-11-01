@@ -200,3 +200,91 @@ public record ErrorMessage : WorkflowMessage
     [JsonPropertyName("details")]
     public string? Details { get; init; }
 }
+
+/// <summary>
+/// 契約選択要求メッセージ
+/// </summary>
+public record ContractSelectionRequestMessage : WorkflowMessage
+{
+    public ContractSelectionRequestMessage() : base()
+    {
+        Type = "contract_selection_request";
+    }
+
+    /// <summary>
+    /// 契約選択肢のリスト
+    /// </summary>
+    [JsonPropertyName("contracts")]
+    public required List<ContractOption> Contracts { get; init; }
+}
+
+/// <summary>
+/// 契約選択肢の情報
+/// </summary>
+public record ContractOption
+{
+    /// <summary>
+    /// 契約のインデックス
+    /// </summary>
+    [JsonPropertyName("index")]
+    public required int Index { get; init; }
+
+    /// <summary>
+    /// 契約のラベル
+    /// </summary>
+    [JsonPropertyName("label")]
+    public required string Label { get; init; }
+
+    /// <summary>
+    /// サプライヤー名
+    /// </summary>
+    [JsonPropertyName("supplierName")]
+    public required string SupplierName { get; init; }
+
+    /// <summary>
+    /// 契約金額
+    /// </summary>
+    [JsonPropertyName("contractValue")]
+    public required decimal ContractValue { get; init; }
+
+    /// <summary>
+    /// 契約期間（月数）
+    /// </summary>
+    [JsonPropertyName("contractTermMonths")]
+    public required int ContractTermMonths { get; init; }
+
+    /// <summary>
+    /// ペナルティ条項の有無
+    /// </summary>
+    [JsonPropertyName("hasPenaltyClause")]
+    public required bool HasPenaltyClause { get; init; }
+
+    /// <summary>
+    /// 自動更新の有無
+    /// </summary>
+    [JsonPropertyName("hasAutoRenewal")]
+    public required bool HasAutoRenewal { get; init; }
+
+    /// <summary>
+    /// 説明
+    /// </summary>
+    [JsonPropertyName("description")]
+    public required string Description { get; init; }
+}
+
+/// <summary>
+/// 契約選択応答メッセージ
+/// </summary>
+public record ContractSelectionResponseMessage : WorkflowMessage
+{
+    public ContractSelectionResponseMessage() : base()
+    {
+        Type = "contract_selection";
+    }
+
+    /// <summary>
+    /// 選択された契約のインデックス
+    /// </summary>
+    [JsonPropertyName("selectedIndex")]
+    public required int SelectedIndex { get; init; }
+}

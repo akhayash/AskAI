@@ -97,4 +97,46 @@ public class ConsoleCommunication : IWorkflowCommunication
         }
         return Task.CompletedTask;
     }
+
+    public Task<int> RequestContractSelectionAsync(object[] contracts)
+    {
+        Console.WriteLine();
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine("契約評価パターンの選択");
+        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Console.WriteLine();
+        Console.WriteLine("評価する契約パターンを選択してください:");
+        Console.WriteLine();
+
+        for (int i = 0; i < contracts.Length; i++)
+        {
+            dynamic contract = contracts[i];
+            var label = i switch
+            {
+                0 => "低リスク契約",
+                1 => "中リスク契約",
+                2 => "高リスク契約",
+                _ => $"契約パターン {i + 1}"
+            };
+
+            Console.WriteLine($"  [{i + 1}] {label}");
+            Console.WriteLine($"      - サプライヤー: {contract.SupplierName}");
+            Console.WriteLine($"      - 契約金額: ${contract.ContractValue:N0}");
+            Console.WriteLine($"      - ペナルティ条項: {(contract.HasPenaltyClause ? "あり" : "なし")}");
+            Console.WriteLine($"      - 自動更新: {(contract.HasAutoRenewal ? "あり" : "なし")}");
+            Console.WriteLine();
+        }
+
+        Console.Write($"選択 [1-{contracts.Length}]: ");
+
+        var input = Console.ReadLine();
+        if (!int.TryParse(input, out var selection) || selection < 1 || selection > contracts.Length)
+        {
+            _logger?.LogWarning("無効な入力です。最初の契約を選択します。");
+            return Task.FromResult(0);
+        }
+
+        Console.WriteLine();
+        return Task.FromResult(selection - 1); // 0-basedに変換
+    }
 }

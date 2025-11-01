@@ -40,4 +40,11 @@ public interface IWorkflowCommunication
     /// エラーを送信
     /// </summary>
     Task SendErrorAsync(string error, string? details = null);
+
+    /// <summary>
+    /// 契約選択要求を送信し、選択を待機
+    /// </summary>
+    /// <param name="contracts">契約情報の配列</param>
+    /// <returns>選択された契約のインデックス（0-based）</returns>
+    Task<int> RequestContractSelectionAsync(object[] contracts);
 }

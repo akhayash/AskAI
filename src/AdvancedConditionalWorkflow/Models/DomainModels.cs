@@ -95,6 +95,9 @@ public record NegotiationProposal
 
     [JsonPropertyName("rationale")]
     public required string Rationale { get; init; }
+
+    [JsonPropertyName("contract_changes")]
+    public Dictionary<string, (object? Before, object? After)>? ContractChanges { get; init; }
 }
 
 /// <summary>
@@ -165,12 +168,24 @@ public record FinalDecision
     [JsonPropertyName("contract_info")]
     public required ContractInfo ContractInfo { get; init; }
 
+    [JsonPropertyName("original_contract_info")]
+    public ContractInfo? OriginalContractInfo { get; init; }
+
     [JsonPropertyName("final_risk_score")]
     public required int FinalRiskScore { get; init; }
+
+    [JsonPropertyName("original_risk_score")]
+    public int? OriginalRiskScore { get; init; }
 
     [JsonPropertyName("decision_summary")]
     public required string DecisionSummary { get; init; }
 
     [JsonPropertyName("next_actions")]
     public List<string>? NextActions { get; init; }
+
+    [JsonPropertyName("negotiation_history")]
+    public List<NegotiationProposal>? NegotiationHistory { get; init; }
+
+    [JsonPropertyName("evaluation_history")]
+    public List<EvaluationResult>? EvaluationHistory { get; init; }
 }

@@ -9,12 +9,16 @@ using Microsoft.Extensions.Logging;
 namespace AdvancedConditionalWorkflow.Executors;
 
 /// <summary>
-/// 契約情報を分析し、レビューが必要な専門分野を特定する Executor
-/// State に ReviewResult リストを初期化
+/// 契約情報を分析し、Fan-Out へ契約を渡す Executor
+/// Fan-Out パターンでは契約情報をそのまま返し、各専門家へ並行配信される
 /// </summary>
-public class ContractAnalysisExecutor : Executor<ContractInfo, (ContractInfo Contract, List<ReviewResult> Reviews)>
+public class ContractAnalysisExecutor : Executor<ContractInfo, ContractInfo>
 {
     private readonly ILogger? _logger;
+
+    // Shared State のスコープ名 (ParallelReviewAggregator と共通)
+    private const string ContractStateScope = "ContractAnalysis";
+    private const string ContractStateKey = "current_contract";
 
     public ContractAnalysisExecutor(ILogger? logger = null, string id = "contract_analysis")
         : base(id)
@@ -22,7 +26,7 @@ public class ContractAnalysisExecutor : Executor<ContractInfo, (ContractInfo Con
         _logger = logger;
     }
 
-    public override async ValueTask<(ContractInfo Contract, List<ReviewResult> Reviews)> HandleAsync(
+    public override async ValueTask<ContractInfo> HandleAsync(
         ContractInfo input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
@@ -46,12 +50,15 @@ public class ContractAnalysisExecutor : Executor<ContractInfo, (ContractInfo Con
         _logger?.LogInformation("  ペナルティ条項: {HasPenalty}", input.HasPenaltyClause ? "あり" : "なし");
         _logger?.LogInformation("  自動更新: {HasAutoRenewal}", input.HasAutoRenewal ? "あり" : "なし");
 
+        // Shared State に契約情報を保存 (Aggregatorで参照)
+        await context.QueueStateUpdateAsync(ContractStateKey, input, scopeName: ContractStateScope, cancellationToken);
+        _logger?.LogInformation("  ✓ 契約情報を Shared State に保存 (scope: {Scope}, key: {Key})",
+            ContractStateScope, ContractStateKey);
+
         TelemetryHelper.LogWithActivity(_logger, activity, LogLevel.Information,
-            "✓ 契約分析完了 - 専門家レビューへ移行");
+            "✓ 契約分析完了 - 専門家レビューへ並行実行 (Fan-Out)");
 
-        await Task.CompletedTask;
-
-        // 契約情報と空のレビューリストを返す
-        return (input, new List<ReviewResult>());
+        // 契約情報をそのまま返し、Fan-Outで3つの専門家へ並行配信
+        return input;
     }
 }
