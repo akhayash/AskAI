@@ -7,6 +7,7 @@ using AdvancedConditionalWorkflow.Executors;
 using AdvancedConditionalWorkflow.Models;
 using Azure.AI.OpenAI;
 using Azure.Identity;
+using Common.WebSocket;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Agents.AI.Workflows.Reflection;
 using Microsoft.Extensions.AI;
@@ -28,9 +29,14 @@ public static class Program
 {
     internal static ActivitySource? ActivitySource;
     internal static ILogger? Logger;
+    internal static Common.WebSocket.IWorkflowCommunication? Communication;
 
-    private static async Task Main()
+    private static async Task Main(string[] args)
     {
+        // コマンドライン引数でモード判定
+        var mode = args.Length > 0 && args[0].Equals("--websocket", StringComparison.OrdinalIgnoreCase)
+            ? "websocket"
+            : "console";
         Console.OutputEncoding = Encoding.UTF8;
         Console.InputEncoding = Encoding.UTF8;
 
@@ -95,7 +101,26 @@ public static class Program
         Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         Logger.LogInformation("Advanced Conditional Workflow デモ");
         Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Logger.LogInformation("実行モード: {Mode}", mode.ToUpper());
         Logger.LogInformation("テレメトリ設定: OTLP Endpoint = {OtlpEndpoint}", otlpEndpoint);
+
+        // Communication設定 (WebSocketまたはConsole)
+        WorkflowWebSocketServer? webSocketServer = null;
+
+        if (mode == "websocket")
+        {
+            webSocketServer = new WorkflowWebSocketServer(8080, Logger);
+            webSocketServer.Start();
+            Communication = new WebSocketCommunication(webSocketServer, Logger);
+            Logger.LogInformation("✓ WebSocketサーバー起動完了 (Port: 8080)");
+        }
+        else
+        {
+            Communication = new ConsoleCommunication(Logger);
+            Logger.LogInformation("✓ コンソールモードで実行");
+        }
+
+        Console.WriteLine();
 
         // Azure OpenAI クライアント設定
         var endpoint = configuration["environmentVariables:AZURE_OPENAI_ENDPOINT"]
@@ -252,6 +277,9 @@ public static class Program
             Logger.LogInformation("ワークフロー実行開始");
             Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
+            // ワークフロー開始をCommunicationに通知
+            await Communication.SendWorkflowStartAsync(contract);
+
             // ワークフロー全体を包む親Activityを作成
             using var workflowActivity = ActivitySource?.StartActivity("ContractReviewWorkflow");
             workflowActivity?.SetTag("supplier", contract.SupplierName);
@@ -280,6 +308,12 @@ public static class Program
                                 workflowActivity?.SetTag("final_decision", decision.Decision);
                                 workflowActivity?.SetTag("final_risk_score", decision.FinalRiskScore);
                                 DisplayFinalDecision(decision);
+                                
+                                // ワークフロー完了をCommunicationに通知
+                                await Communication.SendWorkflowCompleteAsync(decision);
+                                await Communication.SendFinalResponseAsync(
+                                    decision,
+                                    $"決定: {decision.Decision}, 最終リスクスコア: {decision.FinalRiskScore}/100");
                             }
                             else
                             {
@@ -334,6 +368,14 @@ public static class Program
         Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         Logger.LogInformation(selection == 0 ? "=== 全パターンの評価完了 ===" : "=== 評価完了 ===");
         Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+        // WebSocketサーバーのクリーンアップ
+        if (webSocketServer != null)
+        {
+            Logger.LogInformation("WebSocketサーバーを停止しています...");
+            await webSocketServer.StopAsync();
+            webSocketServer.Dispose();
+        }
     }
 
     private static Workflow BuildWorkflow(IChatClient chatClient, ILogger? logger)

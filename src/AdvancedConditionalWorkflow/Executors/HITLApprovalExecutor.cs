@@ -49,41 +49,20 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
         _logger?.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         _logger?.LogInformation("  承認タイプ: {ApprovalType}", GetApprovalTypeLabel());
 
-        Console.WriteLine();
-        Console.WriteLine("═══════════════════════════════════════════");
-        Console.WriteLine($"【{GetApprovalTypeLabel()}】");
-        Console.WriteLine("═══════════════════════════════════════════");
-        Console.WriteLine();
-        Console.WriteLine($"契約: {contract.SupplierName}");
-        Console.WriteLine($"契約金額: ${contract.ContractValue:N0}");
-        Console.WriteLine($"リスクスコア: {risk.OverallRiskScore}/100 ({risk.RiskLevel})");
-        Console.WriteLine();
-
-        if (risk.KeyConcerns != null && risk.KeyConcerns.Count > 0)
-        {
-            Console.WriteLine("主要な懸念事項:");
-            foreach (var concern in risk.KeyConcerns.Take(3))
-            {
-                Console.WriteLine($"  • {concern}");
-            }
-            Console.WriteLine();
-        }
-
-        Console.WriteLine(GetApprovalPrompt());
-        Console.WriteLine();
-        Console.Write("承認しますか? [Y/N]: ");
-
-        var response = Console.ReadLine()?.Trim().ToUpperInvariant();
-        var approved = response == "Y" || response == "YES";
+        // Communicationインターフェース経由でHITL要求
+        var promptMessage = BuildPromptMessage(contract, risk);
+        var approved = await Program.Communication!.RequestHITLApprovalAsync(
+            _approvalType,
+            contract,
+            risk,
+            promptMessage);
 
         activity?.SetTag("approved", approved);
-        activity?.SetTag("user_response", response ?? "");
+        activity?.SetTag("user_response", approved ? "Y" : "N");
 
         TelemetryHelper.LogWithActivity(_logger, activity, LogLevel.Information,
             "👤 HITL結果: {0} (タイプ: {1})",
             approved ? "承認" : "却下", _approvalType);
-
-        Console.WriteLine();
 
         var decision = new FinalDecision
         {
@@ -167,5 +146,28 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
             },
             _ => new List<string> { "次のステップを決定" }
         };
+    }
+
+    private string BuildPromptMessage(ContractInfo contract, RiskAssessment risk)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"契約: {contract.SupplierName}");
+        sb.AppendLine($"契約金額: ${contract.ContractValue:N0}");
+        sb.AppendLine($"リスクスコア: {risk.OverallRiskScore}/100 ({risk.RiskLevel})");
+        sb.AppendLine();
+
+        if (risk.KeyConcerns != null && risk.KeyConcerns.Count > 0)
+        {
+            sb.AppendLine("主要な懸念事項:");
+            foreach (var concern in risk.KeyConcerns.Take(3))
+            {
+                sb.AppendLine($"  • {concern}");
+            }
+            sb.AppendLine();
+        }
+
+        sb.AppendLine(GetApprovalPrompt());
+
+        return sb.ToString();
     }
 }

@@ -122,6 +122,13 @@ public class SpecialistReviewExecutor : Executor<(ContractInfo Contract, List<Re
             _logger?.LogInformation("✓ {SpecialistName} レビュー完了 (リスクスコア: {RiskScore})",
                 _specialistName, result.RiskScore);
 
+            // エージェント発話をCommunicationに送信
+            await Program.Communication!.SendAgentUtteranceAsync(
+                $"{_specialistName} Agent",
+                result.Opinion,
+                "Phase 2: Specialist Review",
+                result.RiskScore);
+
             // レビュー詳細をログ出力
             _logger?.LogInformation("  所見: {Opinion}", result.Opinion);
             if (result.Concerns != null && result.Concerns.Count > 0)
