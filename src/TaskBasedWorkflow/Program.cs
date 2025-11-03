@@ -78,6 +78,7 @@ var activitySource = new ActivitySource("TaskBasedWorkflow");
 using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .SetResourceBuilder(ResourceBuilder.CreateDefault()
         .AddService("TaskBasedWorkflow"))
+    .AddSource("Microsoft.Agents.AI.Workflows*")  // Agent Framework 内部ログ
     .AddSource("TaskBasedWorkflow")
     .AddHttpClientInstrumentation()
     .AddOtlpExporter(exporterOptions =>

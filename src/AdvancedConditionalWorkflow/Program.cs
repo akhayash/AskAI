@@ -101,6 +101,7 @@ public static class Program
         using var tracerProvider = Sdk.CreateTracerProviderBuilder()
             .SetResourceBuilder(ResourceBuilder.CreateDefault()
                 .AddService("AdvancedConditionalWorkflow"))
+            .AddSource("Microsoft.Agents.AI.Workflows*")  // Agent Framework 内部ログ
             .AddSource("AdvancedConditionalWorkflow")
             .AddHttpClientInstrumentation()
             .AddOtlpExporter(exporterOptions =>

@@ -75,6 +75,7 @@ var activitySource = new ActivitySource("SelectiveGroupChatWorkflow");
 using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .SetResourceBuilder(ResourceBuilder.CreateDefault()
         .AddService("SelectiveGroupChatWorkflow"))
+    .AddSource("Microsoft.Agents.AI.Workflows*")  // Agent Framework 内部ログ
     .AddSource("SelectiveGroupChatWorkflow")
     .AddHttpClientInstrumentation()
     .AddOtlpExporter(exporterOptions =>

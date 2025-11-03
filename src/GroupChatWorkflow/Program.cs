@@ -74,6 +74,7 @@ var activitySource = new ActivitySource("GroupChatWorkflow");
 using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .SetResourceBuilder(ResourceBuilder.CreateDefault()
         .AddService("GroupChatWorkflow"))
+    .AddSource("Microsoft.Agents.AI.Workflows*")  // Agent Framework 内部ログ
     .AddSource("GroupChatWorkflow")
     .AddHttpClientInstrumentation()
     .AddOtlpExporter(exporterOptions =>

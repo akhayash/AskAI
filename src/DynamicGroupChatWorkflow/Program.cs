@@ -70,6 +70,7 @@ var activitySource = new ActivitySource("DynamicGroupChatWorkflow");
 using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .SetResourceBuilder(ResourceBuilder.CreateDefault()
         .AddService("DynamicGroupChatWorkflow"))
+    .AddSource("Microsoft.Agents.AI.Workflows*")  // Agent Framework 内部ログ
     .AddSource("DynamicGroupChatWorkflow")
     .AddHttpClientInstrumentation()
     .AddOtlpExporter(exporterOptions =>

@@ -10,6 +10,40 @@
 2. **Application Insights** (設定されている場合)
 3. **コンソール** (開発時)
 
+## Agent Framework 内部ログの有効化
+
+このプロジェクトでは、Microsoft Agent Framework の内部トレースを有効化しています。これにより、ワークフロー実行中のフレームワーク内部の処理を詳細に追跡できます。
+
+### 設定方法
+
+すべてのワークフローで、TracerProvider に以下のソースを追加しています：
+
+```csharp
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .SetResourceBuilder(ResourceBuilder.CreateDefault()
+        .AddService("YourWorkflowName"))
+    .AddSource("Microsoft.Agents.AI.Workflows*")  // Agent Framework 内部ログ
+    .AddSource("YourWorkflowName")
+    .AddHttpClientInstrumentation()
+    .AddOtlpExporter(exporterOptions =>
+    {
+        exporterOptions.Endpoint = new Uri(otlpEndpoint);
+    })
+    .AddConsoleExporter()
+    .Build();
+```
+
+### 内部ログの利点
+
+- **ワークフロー実行の詳細**: Executor の開始・完了、メッセージのルーティング、状態遷移などのフレームワーク内部動作を追跡
+- **パフォーマンス分析**: フレームワーク内の処理時間を詳細に測定
+- **デバッグの容易化**: 問題発生時にフレームワーク内部の動作を確認可能
+- **エンドツーエンドのトレーシング**: アプリケーションコードとフレームワーク内部の処理を統合的に追跡
+
+### 確認方法
+
+Aspire Dashboard でトレースを表示すると、`Microsoft.Agents.AI.Workflows` で始まるスパンが表示されます。これらのスパンは、Agent Framework 内部の処理を表しています。
+
 ## 設定方法
 
 ### 1. Aspire Dashboard の使用（推奨）

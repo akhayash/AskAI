@@ -75,6 +75,7 @@ var activitySource = new ActivitySource("HandoffWorkflow");
 using var tracerProvider = Sdk.CreateTracerProviderBuilder()
     .SetResourceBuilder(ResourceBuilder.CreateDefault()
         .AddService("HandoffWorkflow"))
+    .AddSource("Microsoft.Agents.AI.Workflows*")  // Agent Framework 内部ログ
     .AddSource("HandoffWorkflow")
     .AddHttpClientInstrumentation()
     .AddOtlpExporter(exporterOptions =>
