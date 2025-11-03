@@ -11,10 +11,10 @@ namespace AdvancedConditionalWorkflow.Executors;
 
 /// <summary>
 /// 専門家レビューを実行する Executor
-/// State に ReviewResult を累積させるパターンを使用
+/// Fan-Out/Fan-In パターン用: 入力は契約情報、出力は単一のレビュー結果
 /// Structured Output を使用して型安全なJSON出力を実現
 /// </summary>
-public class SpecialistReviewExecutor : Executor<(ContractInfo Contract, List<ReviewResult> Reviews), (ContractInfo Contract, List<ReviewResult> Reviews)>
+public class SpecialistReviewExecutor : Executor<ContractInfo, ReviewResult>
 {
     private readonly ChatClientAgent _agent;
     private readonly string _specialistName;
@@ -62,14 +62,12 @@ public class SpecialistReviewExecutor : Executor<(ContractInfo Contract, List<Re
             });
     }
 
-    public override async ValueTask<(ContractInfo Contract, List<ReviewResult> Reviews)> HandleAsync(
-        (ContractInfo Contract, List<ReviewResult> Reviews) input,
+    public override async ValueTask<ReviewResult> HandleAsync(
+        ContractInfo contract,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
         _logger?.LogInformation("🔍 {SpecialistName} による契約レビューを開始", _specialistName);
-
-        var contract = input.Contract;
         var penaltyClause = contract.HasPenaltyClause ? "あり" : "なし";
         var autoRenewal = contract.HasAutoRenewal ? "あり" : "なし";
         var description = string.IsNullOrEmpty(contract.Description) ? "" : $"- 説明: {contract.Description}";
@@ -122,6 +120,13 @@ public class SpecialistReviewExecutor : Executor<(ContractInfo Contract, List<Re
             _logger?.LogInformation("✓ {SpecialistName} レビュー完了 (リスクスコア: {RiskScore})",
                 _specialistName, result.RiskScore);
 
+            // エージェント発話をCommunicationに送信
+            await Program.Communication!.SendAgentUtteranceAsync(
+                $"{_specialistName} Agent",
+                result.Opinion,
+                "Phase 2: Specialist Review",
+                result.RiskScore);
+
             // レビュー詳細をログ出力
             _logger?.LogInformation("  所見: {Opinion}", result.Opinion);
             if (result.Concerns != null && result.Concerns.Count > 0)
@@ -141,9 +146,8 @@ public class SpecialistReviewExecutor : Executor<(ContractInfo Contract, List<Re
                 }
             }
 
-            // 既存のレビューリストに追加
-            var updatedReviews = new List<ReviewResult>(input.Reviews) { result };
-            return (input.Contract, updatedReviews);
+            // 単一のレビュー結果を返す (Fan-Inでまとめられる)
+            return result;
         }
         catch (Exception ex)
         {
@@ -160,8 +164,7 @@ public class SpecialistReviewExecutor : Executor<(ContractInfo Contract, List<Re
                 Recommendations = new List<string> { "手動での再レビューを推奨" }
             };
 
-            var updatedReviews = new List<ReviewResult>(input.Reviews) { fallbackResult };
-            return (input.Contract, updatedReviews);
+            return fallbackResult;
         }
     }
 }

@@ -40,8 +40,6 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
                 ["contract_value"] = input.Contract.ContractValue
             });
 
-        await Task.CompletedTask;
-
         var (contract, risk) = input;
 
         _logger?.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -49,50 +47,107 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
         _logger?.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         _logger?.LogInformation("  承認タイプ: {ApprovalType}", GetApprovalTypeLabel());
 
-        Console.WriteLine();
-        Console.WriteLine("═══════════════════════════════════════════");
-        Console.WriteLine($"【{GetApprovalTypeLabel()}】");
-        Console.WriteLine("═══════════════════════════════════════════");
-        Console.WriteLine();
-        Console.WriteLine($"契約: {contract.SupplierName}");
-        Console.WriteLine($"契約金額: ${contract.ContractValue:N0}");
-        Console.WriteLine($"リスクスコア: {risk.OverallRiskScore}/100 ({risk.RiskLevel})");
-        Console.WriteLine();
+        // Shared State から元の契約情報を取得
+        _logger?.LogInformation("📖 Shared State から元の契約・リスク情報を読み取り中...");
+        ContractInfo? originalContract = null;
+        RiskAssessment? originalRisk = null;
+        List<NegotiationProposal>? negotiationHistory = null;
+        List<EvaluationResult>? evaluationHistory = null;
 
-        if (risk.KeyConcerns != null && risk.KeyConcerns.Count > 0)
+        try
         {
-            Console.WriteLine("主要な懸念事項:");
-            foreach (var concern in risk.KeyConcerns.Take(3))
-            {
-                Console.WriteLine($"  • {concern}");
-            }
-            Console.WriteLine();
+            originalContract = await context.ReadStateAsync<ContractInfo>("original_contract",
+                scopeName: SharedStateScopes.OriginalContract,
+                cancellationToken: cancellationToken);
+            _logger?.LogInformation("  ✓ 元の契約情報を {Scope} から取得", SharedStateScopes.OriginalContract);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning("  ⚠️ 元の契約情報の取得に失敗: {Message}", ex.Message);
         }
 
-        Console.WriteLine(GetApprovalPrompt());
-        Console.WriteLine();
-        Console.Write("承認しますか? [Y/N]: ");
+        try
+        {
+            originalRisk = await context.ReadStateAsync<RiskAssessment>("original_risk",
+                scopeName: SharedStateScopes.OriginalRisk,
+                cancellationToken: cancellationToken);
+            _logger?.LogInformation("  ✓ 元のリスク評価を {Scope} から取得 (スコア: {Score})",
+                SharedStateScopes.OriginalRisk, originalRisk?.OverallRiskScore);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning("  ⚠️ 元のリスク評価の取得に失敗: {Message}", ex.Message);
+        }
 
-        var response = Console.ReadLine()?.Trim().ToUpperInvariant();
-        var approved = response == "Y" || response == "YES";
+        try
+        {
+            negotiationHistory = await context.ReadStateAsync<List<NegotiationProposal>>("negotiation_history",
+                scopeName: SharedStateScopes.NegotiationHistory,
+                cancellationToken: cancellationToken);
+            _logger?.LogInformation("  ✓ 交渉履歴を {Scope} から取得 ({Count}件)",
+                SharedStateScopes.NegotiationHistory, negotiationHistory?.Count ?? 0);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning("  ⚠️ 交渉履歴の取得に失敗: {Message}", ex.Message);
+        }
+
+        try
+        {
+            evaluationHistory = await context.ReadStateAsync<List<EvaluationResult>>("evaluation_history",
+                scopeName: SharedStateScopes.EvaluationHistory,
+                cancellationToken: cancellationToken);
+            _logger?.LogInformation("  ✓ 評価履歴を {Scope} から取得 ({Count}件)",
+                SharedStateScopes.EvaluationHistory, evaluationHistory?.Count ?? 0);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning("  ⚠️ 評価履歴の取得に失敗: {Message}", ex.Message);
+        }
+
+        // Communicationインターフェース経由でHITL要求
+        var promptMessage = BuildPromptMessage(contract, risk);
+        var approved = await Program.Communication!.RequestHITLApprovalAsync(
+            _approvalType,
+            contract,
+            risk,
+            promptMessage);
 
         activity?.SetTag("approved", approved);
-        activity?.SetTag("user_response", response ?? "");
+        activity?.SetTag("user_response", approved ? "Y" : "N");
 
         TelemetryHelper.LogWithActivity(_logger, activity, LogLevel.Information,
             "👤 HITL結果: {0} (タイプ: {1})",
             approved ? "承認" : "却下", _approvalType);
 
-        Console.WriteLine();
-
         var decision = new FinalDecision
         {
             Decision = GetDecisionLabel(approved),
             ContractInfo = contract,
+            OriginalContractInfo = originalContract, // Shared State から取得
             FinalRiskScore = risk.OverallRiskScore,
+            OriginalRiskScore = originalRisk?.OverallRiskScore, // Shared State から取得
             DecisionSummary = GenerateSummary(approved, contract, risk),
-            NextActions = GenerateNextActions(approved, risk)
+            NextActions = GenerateNextActions(approved, risk),
+            NegotiationHistory = negotiationHistory, // Shared State から取得
+            EvaluationHistory = evaluationHistory   // Shared State から取得
         };
+
+        _logger?.LogInformation("✓ FinalDecision 作成完了");
+        if (originalContract != null)
+        {
+            _logger?.LogInformation("  📋 契約変更: {OriginalSupplier} → {CurrentSupplier}",
+                originalContract.SupplierName, contract.SupplierName);
+        }
+        if (originalRisk != null)
+        {
+            _logger?.LogInformation("  📊 リスク変化: {OriginalScore} → {FinalScore}",
+                originalRisk.OverallRiskScore, risk.OverallRiskScore);
+        }
+        if (negotiationHistory != null && negotiationHistory.Count > 0)
+        {
+            _logger?.LogInformation("  🔄 交渉回数: {Count}回", negotiationHistory.Count);
+        }
 
         // 最終出力を発行
         await context.YieldOutputAsync(decision, cancellationToken);
@@ -167,5 +222,28 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
             },
             _ => new List<string> { "次のステップを決定" }
         };
+    }
+
+    private string BuildPromptMessage(ContractInfo contract, RiskAssessment risk)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"契約: {contract.SupplierName}");
+        sb.AppendLine($"契約金額: ${contract.ContractValue:N0}");
+        sb.AppendLine($"リスクスコア: {risk.OverallRiskScore}/100 ({risk.RiskLevel})");
+        sb.AppendLine();
+
+        if (risk.KeyConcerns != null && risk.KeyConcerns.Count > 0)
+        {
+            sb.AppendLine("主要な懸念事項:");
+            foreach (var concern in risk.KeyConcerns.Take(3))
+            {
+                sb.AppendLine($"  • {concern}");
+            }
+            sb.AppendLine();
+        }
+
+        sb.AppendLine(GetApprovalPrompt());
+
+        return sb.ToString();
     }
 }

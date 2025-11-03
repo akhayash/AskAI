@@ -7,22 +7,53 @@ using Microsoft.Extensions.Logging;
 namespace AdvancedConditionalWorkflow.Executors;
 
 /// <summary>
-/// 複数の専門家レビューを統合してリスク評価を行う
+/// Fan-In パターンでの専門家レビュー統合 Executor
+/// 3つの専門家 (Legal, Finance, Procurement) からの ReviewResult を収集し、
+/// すべて揃った時点で RiskAssessment を生成
 /// </summary>
-public class ParallelReviewAggregator(ILogger? logger = null, string id = "review_aggregator")
-    : Executor<(ContractInfo Contract, List<ReviewResult> Reviews), (ContractInfo Contract, RiskAssessment Risk)>(id)
+public class ParallelReviewAggregator : Executor<ReviewResult, (ContractInfo Contract, RiskAssessment Risk)?>
 {
-    private readonly ILogger? _logger = logger;
+    private readonly ILogger? _logger;
+    private readonly List<ReviewResult> _reviews = [];
 
-    public override async ValueTask<(ContractInfo Contract, RiskAssessment Risk)> HandleAsync(
-        (ContractInfo Contract, List<ReviewResult> Reviews) input,
+    // Shared State のスコープ名
+    private const string ContractStateScope = "ContractAnalysis";
+    private const string ContractStateKey = "current_contract";
+
+    public ParallelReviewAggregator(ILogger? logger = null, string id = "review_aggregator")
+        : base(id)
+    {
+        _logger = logger;
+    }
+
+    public override async ValueTask<(ContractInfo Contract, RiskAssessment Risk)?> HandleAsync(
+        ReviewResult review,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
-        await Task.CompletedTask;
+        // レビュー結果を追加
+        _reviews.Add(review);
+        _logger?.LogInformation("📊 レビュー受信: {Reviewer} ({CurrentCount}/3)", review.Reviewer, _reviews.Count);
 
-        var reviews = input.Reviews;
-        _logger?.LogInformation("📊 {ReviewCount}件のレビュー結果を統合中...", reviews.Count);
+        // Fan-In: 3つすべてのレビューが揃うまで待機
+        if (_reviews.Count < 3)
+        {
+            _logger?.LogInformation("⏳ 残り {RemainingCount} 件のレビューを待機中 (null返却)", 3 - _reviews.Count);
+            // 3つ揃うまでは null を返す (条件付きエッジで HasValue = false になる)
+            return null;
+        }
+
+        _logger?.LogInformation("✓ すべてのレビューが揃いました。統合処理を開始");
+
+        // Shared State から契約情報を取得
+        var contract = await context.ReadStateAsync<ContractInfo>(ContractStateKey, scopeName: ContractStateScope, cancellationToken);
+
+        if (contract == null)
+        {
+            throw new InvalidOperationException("契約情報が Shared State に保存されていません");
+        }
+
+        var reviews = _reviews;
 
         // 平均リスクスコアを計算
         var overallRiskScore = reviews.Count > 0
@@ -59,6 +90,13 @@ public class ParallelReviewAggregator(ILogger? logger = null, string id = "revie
         _logger?.LogInformation("✓ リスク評価完了: レベル={RiskLevel}, スコア={RiskScore}",
             riskLevel, overallRiskScore);
 
+        // エージェント発話をCommunicationに送信
+        await Program.Communication!.SendAgentUtteranceAsync(
+            "Risk Aggregator",
+            summary,
+            "Phase 3: Risk Assessment",
+            overallRiskScore);
+
         // 評価詳細をログ出力
         _logger?.LogInformation("  サマリー:");
         foreach (var line in result.Summary?.Split('\n') ?? Array.Empty<string>())
@@ -78,7 +116,12 @@ public class ParallelReviewAggregator(ILogger? logger = null, string id = "revie
             }
         }
 
-        return (input.Contract, result);
+        // タプルを返して条件付きエッジ経由で次のExecutorにルーティング
+        _logger?.LogInformation("🔀 条件付きエッジへ出力: Supplier={Supplier}, RiskScore={RiskScore}, RiskLevel={RiskLevel}",
+            contract.SupplierName, result.OverallRiskScore, result.RiskLevel);
+
+        // 最終的な統合レポートを return (Nullable型なので non-null を返す)
+        return (contract, result);
     }
 
     private static string GenerateSummary(List<ReviewResult> reviews, int overallScore, string riskLevel)

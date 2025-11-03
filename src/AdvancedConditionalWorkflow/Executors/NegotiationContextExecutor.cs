@@ -85,6 +85,11 @@ public class NegotiationContextExecutor : Executor<(ContractInfo Contract, RiskA
         activity?.SetTag("target_achieved", targetAchieved);
         activity?.SetTag("continue_negotiation", continueNegotiation);
 
+        _logger?.LogInformation("🔀 条件付きエッジへ出力: ContinueNegotiation={Continue} (ループバック={Loopback}, 終了={Exit})",
+            continueNegotiation,
+            continueNegotiation ? "✅" : "❌",
+            !continueNegotiation ? "✅" : "❌");
+
         return (contract, evaluation);
     }
 

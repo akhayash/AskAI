@@ -60,6 +60,27 @@ public class EvaluationExecutor(ILogger? logger = null, string id = "evaluation_
             "✓ 評価完了: 改善={IsImproved}, 新スコア={NewScore}, 継続={Continue}",
             isImproved, newRiskScore, continueNegotiation);
 
+        // Shared State に評価履歴を保存
+        try
+        {
+            var history = await context.ReadStateAsync<List<EvaluationResult>>("evaluation_history",
+                scopeName: SharedStateScopes.EvaluationHistory,
+                cancellationToken: cancellationToken) ?? new List<EvaluationResult>();
+
+            history.Add(result);
+
+            await context.QueueStateUpdateAsync("evaluation_history", history,
+                scopeName: SharedStateScopes.EvaluationHistory,
+                cancellationToken: cancellationToken);
+
+            _logger?.LogInformation("💾 評価履歴を {Scope} に保存 (合計 {Count}件)",
+                SharedStateScopes.EvaluationHistory, history.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning("⚠️ 評価履歴の保存に失敗: {Message}", ex.Message);
+        }
+
         return result;
     }
 

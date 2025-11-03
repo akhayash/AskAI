@@ -7,6 +7,7 @@ using AdvancedConditionalWorkflow.Executors;
 using AdvancedConditionalWorkflow.Models;
 using Azure.AI.OpenAI;
 using Azure.Identity;
+using Common.WebSocket;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Agents.AI.Workflows.Reflection;
 using Microsoft.Extensions.AI;
@@ -20,6 +21,17 @@ using OpenTelemetry.Trace;
 namespace AdvancedConditionalWorkflow;
 
 /// <summary>
+/// Shared State のスコープ定数
+/// </summary>
+internal static class SharedStateScopes
+{
+    public const string OriginalContract = "OriginalContract";
+    public const string OriginalRisk = "OriginalRisk";
+    public const string NegotiationHistory = "NegotiationHistory";
+    public const string EvaluationHistory = "EvaluationHistory";
+}
+
+/// <summary>
 /// Advanced Conditional Workflow:
 /// Condition, Loop, HITL, Visualize, Multi-Selection を活用した
 /// 契約レビュー→自動交渉→承認プロセスのデモ
@@ -29,8 +41,16 @@ public static class Program
     internal static ActivitySource? ActivitySource;
     internal static ILogger? Logger;
 
-    private static async Task Main()
+    // Communication is initialized in Main() before any workflow execution
+    // and accessed only by Executors during workflow execution
+    internal static Common.WebSocket.IWorkflowCommunication? Communication;
+
+    private static async Task Main(string[] args)
     {
+        // コマンドライン引数でモード判定
+        var mode = args.Length > 0 && args[0].Equals("--websocket", StringComparison.OrdinalIgnoreCase)
+            ? "websocket"
+            : "console";
         Console.OutputEncoding = Encoding.UTF8;
         Console.InputEncoding = Encoding.UTF8;
 
@@ -95,7 +115,26 @@ public static class Program
         Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         Logger.LogInformation("Advanced Conditional Workflow デモ");
         Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Logger.LogInformation("実行モード: {Mode}", mode.ToUpper());
         Logger.LogInformation("テレメトリ設定: OTLP Endpoint = {OtlpEndpoint}", otlpEndpoint);
+
+        // Communication設定 (WebSocketまたはConsole)
+        WorkflowWebSocketServer? webSocketServer = null;
+
+        if (mode == "websocket")
+        {
+            webSocketServer = new WorkflowWebSocketServer(8080, Logger);
+            webSocketServer.Start();
+            Communication = new WebSocketCommunication(webSocketServer, Logger);
+            Logger.LogInformation("✓ WebSocketサーバー起動完了 (Port: 8080)");
+        }
+        else
+        {
+            Communication = new ConsoleCommunication(Logger);
+            Logger.LogInformation("✓ コンソールモードで実行");
+        }
+
+        Console.WriteLine();
 
         // Azure OpenAI クライアント設定
         var endpoint = configuration["environmentVariables:AZURE_OPENAI_ENDPOINT"]
@@ -179,57 +218,42 @@ public static class Program
         Logger.LogInformation("✓ ワークフロー構築完了");
         Console.WriteLine();
 
-        // ユーザーに契約パターンを選択させる
-        Console.WriteLine();
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine("契約評価パターンの選択");
-        Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Console.WriteLine();
-        Console.WriteLine("評価する契約パターンを選択してください:");
-        Console.WriteLine();
-        Console.WriteLine("  [0] 全パターンを順次実行");
-        Console.WriteLine();
-        Console.WriteLine("  [1] 低リスク契約");
-        Console.WriteLine("      - サプライヤー: Reliable Goods Co.");
-        Console.WriteLine("      - 契約金額: $100,000");
-        Console.WriteLine("      - ペナルティ条項: あり");
-        Console.WriteLine("      - 自動更新: なし");
-        Console.WriteLine();
-        Console.WriteLine("  [2] 中リスク契約");
-        Console.WriteLine("      - サプライヤー: Standard Services Ltd.");
-        Console.WriteLine("      - 契約金額: $300,000");
-        Console.WriteLine("      - ペナルティ条項: あり");
-        Console.WriteLine("      - 自動更新: あり");
-        Console.WriteLine();
-        Console.WriteLine("  [3] 高リスク契約");
-        Console.WriteLine("      - サプライヤー: Global Tech Solutions Inc.");
-        Console.WriteLine("      - 契約金額: $500,000");
-        Console.WriteLine("      - ペナルティ条項: なし");
-        Console.WriteLine("      - 自動更新: あり");
-        Console.WriteLine();
-        Console.Write("選択 [0-3]: ");
-
-        var input = Console.ReadLine();
-        if (!int.TryParse(input, out var selection) || selection < 0 || selection > 3)
+        // WebSocketモードの場合、クライアント接続を待機
+        if (mode == "websocket" && webSocketServer != null)
         {
-            Logger.LogWarning("無効な入力です。全パターンを実行します。");
-            selection = 0;
+            Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+            Logger.LogInformation("WebSocketクライアントの接続を待機中...");
+            Logger.LogInformation("ブラウザで http://localhost:3000 を開いてください");
+            Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+            // クライアントが実際に接続するまで待機
+            await webSocketServer.WaitForClientConnectionAsync();
+
+            Logger.LogInformation("✓ クライアント接続を確認しました (接続数: {Count})", webSocketServer.ConnectedClientCount);
+            Logger.LogInformation("✓ 契約選択プロセスを開始します。");
+            Console.WriteLine();
         }
 
+        // ユーザーに契約パターンを選択させる
+        Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+        Logger.LogInformation("契約評価パターンの選択");
+        Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+        // Communication経由で契約選択を要求
+        var selectedIndex = await Communication.RequestContractSelectionAsync(testContracts);
+
+        Logger.LogInformation("選択された契約: インデックス {SelectedIndex}", selectedIndex);
         Console.WriteLine();
 
-        // 実行する契約を決定
-        var contractsToRun = selection == 0
-            ? testContracts
-            : new[] { testContracts[selection - 1] };
-
-        var startIndex = selection == 0 ? 0 : selection - 1;
+        // 実行する契約を決定（選択されたもののみ）
+        var contractsToRun = new[] { testContracts[selectedIndex] };
+        var startIndex = selectedIndex;
 
         // 選択されたパターンを実行
         for (int i = 0; i < contractsToRun.Length; i++)
         {
             var contract = contractsToRun[i];
-            var actualIndex = selection == 0 ? i : startIndex;
+            var actualIndex = startIndex;
             var patternLabel = actualIndex switch
             {
                 0 => "低リスク",
@@ -252,6 +276,9 @@ public static class Program
             Logger.LogInformation("ワークフロー実行開始");
             Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
+            // ワークフロー開始をCommunicationに通知
+            await Communication.SendWorkflowStartAsync(contract);
+
             // ワークフロー全体を包む親Activityを作成
             using var workflowActivity = ActivitySource?.StartActivity("ContractReviewWorkflow");
             workflowActivity?.SetTag("supplier", contract.SupplierName);
@@ -263,23 +290,47 @@ public static class Program
             {
                 await using var run = await InProcessExecution.StreamAsync(workflow, contract);
 
+                // WorkflowOutputEvent重複チェック用フラグ
+                var outputReceived = false;
+
                 await foreach (var evt in run.WatchStreamAsync())
                 {
-                    // フレームワークイベントはTraceレベルで記録
-                    Logger.LogTrace("📍 イベント受信: {EventType}", evt.GetType().Name);
+                    // デバッグ用: すべてのイベントをInfoレベルで記録
+                    Logger.LogInformation("📍 イベント受信: {EventType}", evt.GetType().Name);
 
                     switch (evt)
                     {
                         case WorkflowOutputEvent outputEvent:
+                            // 重複チェック: 既に出力を受信している場合はスキップ
+                            if (outputReceived)
+                            {
+                                Logger.LogWarning("⚠️ 重複するWorkflowOutputEventを検出しました。スキップします。");
+                                break;
+                            }
+
+                            outputReceived = true;
+
                             Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
                             Logger.LogInformation("🎉 ワークフロー完了");
                             Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
                             if (outputEvent.Data is FinalDecision decision)
                             {
-                                workflowActivity?.SetTag("final_decision", decision.Decision);
-                                workflowActivity?.SetTag("final_risk_score", decision.FinalRiskScore);
-                                DisplayFinalDecision(decision);
+                                // 元の契約情報を追加（交渉前後の差分表示用）
+                                var enrichedDecision = decision with
+                                {
+                                    OriginalContractInfo = contract
+                                };
+
+                                workflowActivity?.SetTag("final_decision", enrichedDecision.Decision);
+                                workflowActivity?.SetTag("final_risk_score", enrichedDecision.FinalRiskScore);
+                                DisplayFinalDecision(enrichedDecision);
+
+                                // ワークフロー完了をCommunicationに通知
+                                await Communication.SendWorkflowCompleteAsync(enrichedDecision);
+                                await Communication.SendFinalResponseAsync(
+                                    enrichedDecision,
+                                    $"決定: {enrichedDecision.Decision}, 最終リスクスコア: {enrichedDecision.FinalRiskScore}/100");
                             }
                             else
                             {
@@ -332,8 +383,16 @@ public static class Program
         }
 
         Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-        Logger.LogInformation(selection == 0 ? "=== 全パターンの評価完了 ===" : "=== 評価完了 ===");
+        Logger.LogInformation("=== 評価完了 ===");
         Logger.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+        // WebSocketサーバーのクリーンアップ
+        if (webSocketServer != null)
+        {
+            Logger.LogInformation("WebSocketサーバーを停止しています...");
+            await webSocketServer.StopAsync();
+            webSocketServer.Dispose();
+        }
     }
 
     private static Workflow BuildWorkflow(IChatClient chatClient, ILogger? logger)
@@ -354,6 +413,7 @@ public static class Program
         var negotiationStateInit = new NegotiationStateInitExecutor(logger);
         var negotiationExecutor = new NegotiationExecutor(chatClient, logger);
         var negotiationContext = new NegotiationContextExecutor(logger);
+        var negotiationLoopBack = new NegotiationLoopBackExecutor(logger);
         var negotiationResult = new NegotiationResultExecutor(logger);
 
         // === Phase 5: HITL - 人間による最終判断 ===
@@ -364,18 +424,11 @@ public static class Program
         // === ワークフロー構築 ===
         var builder = new WorkflowBuilder(analysisExecutor);
 
-        // Fan-Out: 契約分析後、3人の専門家に並列に渡す
-        // 注: 現在のフレームワークでは順次実行になるが、構造上は並列を意図
-        builder
-            .AddEdge(analysisExecutor, legalReviewer)
-            .AddEdge(analysisExecutor, financeReviewer)
-            .AddEdge(analysisExecutor, procurementReviewer);
+        // Fan-Out: 契約分析後、3人の専門家に並列配信
+        builder.AddFanOutEdge(analysisExecutor, targets: [legalReviewer, financeReviewer, procurementReviewer]);
 
-        // Fan-In: 3人のレビューを集約
-        builder
-            .AddEdge(legalReviewer, aggregator)
-            .AddEdge(financeReviewer, aggregator)
-            .AddEdge(procurementReviewer, aggregator);
+        // Fan-In: 3人のレビューをAggregatorに集約
+        builder.AddFanInEdge(aggregator, sources: [legalReviewer, financeReviewer, procurementReviewer]);
 
         // Switch: リスクスコアによる3方向分岐
         builder
@@ -403,10 +456,11 @@ public static class Program
             // 交渉提案 → 評価 (状態から契約とリスクを取得)
             .AddEdge(negotiationExecutor, negotiationContext)
 
-            // ループバック: 継続 && 改善余地あり → 次の交渉へ
-            .AddEdge(negotiationContext, negotiationExecutor,
+            // ループバック: 継続 && 改善余地あり → ループバック処理 → 次の交渉へ
+            .AddEdge(negotiationContext, negotiationLoopBack,
                 condition: ((ContractInfo, EvaluationResult)? data) =>
                     data.HasValue && data.Value.Item2.ContinueNegotiation)
+            .AddEdge(negotiationLoopBack, negotiationExecutor)
 
             // 評価結果 → リスク評価形式に変換 (ループ終了時のみ)
             .AddEdge(negotiationContext, negotiationResult,
