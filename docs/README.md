@@ -49,40 +49,64 @@
 
 各ワークフローの実装詳細と調査結果です。
 
-- **[implementation-summary.md](workflows/implementation-summary.md)**
-  - SelectiveGroupChatWorkflow の実装概要
-  - Issue の背景と解決策
-  - アーキテクチャと実装詳細
+#### 主要ワークフロー
+
+- **[advanced-conditional-workflow.md](workflows/advanced-conditional-workflow.md)**
+  - Advanced Conditional Workflow の実装詳細
+  - Fan-Out/Fan-In による並列実行
+  - Conditional Edges, Loop, HITL
+  - パフォーマンス最適化
+
+- **[dynamic-group-chat-workflow.md](workflows/dynamic-group-chat-workflow.md)**
+  - Dynamic Group Chat Workflow の実装詳細
+  - 動的専門家選抜とHandoffパターン
+  - Human-in-the-Loop (HITL) with Loop Monitoring
+  - 適応的なワークフロー設計
+
+- **[graph-executor-workflow.md](workflows/graph-executor-workflow.md)**
+  - Graph Executor Workflow の実装詳細
+  - Executor と Edge の概念
+  - 実装詳細と技術仕様
   - 既存ワークフローとの比較
 
-- **[task-workflow.md](workflows/task-workflow.md)**
-  - TaskBasedWorkflow の実装概要
+- **[selective-group-chat-workflow.md](workflows/selective-group-chat-workflow.md)**
+  - Selective Group Chat Workflow の実装詳細
+  - 選択的専門家呼び出し
+  - 並列実行と結果統合
+  - アーキテクチャと実装詳細
+
+- **[task-based-workflow.md](workflows/task-based-workflow.md)**
+  - Task-Based Workflow の実装詳細
   - Domain モデル (TaskItem, TaskStatus, TaskBoard)
   - 3フェーズのワークフロー
-  - 既存ワークフローとの比較
+  - タスク管理パターン
+
+#### 補足資料
 
 - **[graph-executor-investigation.md](workflows/graph-executor-investigation.md)**
   - Graph Executor ワークフローの詳細調査
-  - Executor と Edge の概念
-  - 実装詳細と技術仕様
+  - 技術的な深掘り
   - 今後の拡張可能性
 
-- **[graph-executor-summary.md](workflows/graph-executor-summary.md)**
-  - Graph Executor の実装サマリー
-  - 成果物と要件達成状況
-  - 技術的特徴
-  - 既存ワークフローとの比較
+- **[advanced-conditional-ui-summary.md](workflows/advanced-conditional-ui-summary.md)**
+  - Advanced Conditional Workflow の UI 実装
+  - WebSocket 通信とリアルタイム可視化
+
+- **[ui-demo-guide.md](workflows/ui-demo-guide.md)**
+  - UI デモの使用方法
+  - セットアップとトラブルシューティング
 
 ## 📖 各ワークフローの README
 
 詳細な使用方法とアーキテクチャは、各ワークフローのディレクトリ内の README を参照してください：
 
-- [DynamicGroupChatWorkflow](../src/DynamicGroupChatWorkflow/README.md) - 動的選抜 + HITL
-- [TaskBasedWorkflow](../src/TaskBasedWorkflow/README.md) - タスクベースワークフロー
-- [SelectiveGroupChatWorkflow](../src/SelectiveGroupChatWorkflow/README.md) - 選択的グループチャット
-- [GraphExecutorWorkflow](../src/GraphExecutorWorkflow/README.md) - グラフエグゼキュータ
-- [HandoffWorkflow](../src/HandoffWorkflow/) - ハンドオフワークフロー
-- [GroupChatWorkflow](../src/GroupChatWorkflow/) - グループチャットワークフロー
+- [AdvancedConditionalWorkflow](../src/AdvancedConditionalWorkflow/README.md) - 高度な条件分岐 + Fan-Out/Fan-In + HITL
+- [DynamicGroupChatWorkflow](../src/DynamicGroupChatWorkflow/README.md) - 動的選抜 + Handoff + HITL
+- [GraphExecutorWorkflow](../src/GraphExecutorWorkflow/README.md) - グラフエグゼキュータ + 並列実行
+- [SelectiveGroupChatWorkflow](../src/SelectiveGroupChatWorkflow/README.md) - 選択的グループチャット + 並列実行
+- [TaskBasedWorkflow](../src/TaskBasedWorkflow/README.md) - タスクベース + プランナー/ワーカーパターン
+- [GroupChatWorkflow](../src/GroupChatWorkflow/) - ラウンドロビングループチャット
+- [HandoffWorkflow](../src/HandoffWorkflow/) - ハンドオフパターン
 
 ## 🚀 クイックスタート
 
