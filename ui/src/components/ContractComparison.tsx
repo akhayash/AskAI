@@ -15,10 +15,12 @@ export function ContractComparison({
 
   if (!hasChanges) {
     return (
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-        <div className="flex items-center gap-2 text-blue-700">
-          <AlertCircle className="w-5 h-5" />
-          <span className="font-semibold">契約条件に変更はありません</span>
+      <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-300 rounded-xl p-5 mb-5 shadow-sm">
+        <div className="flex items-center gap-3 text-blue-700">
+          <div className="bg-blue-600 p-2 rounded-lg">
+            <AlertCircle className="w-6 h-6 text-white" />
+          </div>
+          <span className="font-bold text-lg">契約条件に変更はありません</span>
         </div>
       </div>
     );
@@ -37,28 +39,32 @@ export function ContractComparison({
 
     return (
       <div
-        className={`flex items-center gap-4 p-3 rounded ${
-          changed ? "bg-yellow-50 border border-yellow-300" : "bg-slate-50"
+        className={`flex items-center gap-4 p-4 rounded-xl shadow-sm ${
+          changed 
+            ? "bg-gradient-to-br from-yellow-50 to-amber-50 border-2 border-yellow-400" 
+            : "bg-slate-50 border border-slate-200"
         }`}
       >
         <div className="flex-1">
-          <div className="text-xs font-semibold text-slate-600 mb-1">
+          <div className="text-xs font-bold text-slate-600 mb-2 uppercase tracking-wide">
             {label}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <span
               className={
                 changed
-                  ? "line-through text-slate-400"
-                  : "text-slate-900 font-medium"
+                  ? "line-through text-slate-400 font-medium"
+                  : "text-slate-900 font-bold text-lg"
               }
             >
               {format(origValue)}
             </span>
             {changed && (
               <>
-                <ArrowRight className="w-4 h-4 text-yellow-600" />
-                <span className="text-slate-900 font-bold">
+                <div className="bg-yellow-600 p-1 rounded">
+                  <ArrowRight className="w-5 h-5 text-white" />
+                </div>
+                <span className="text-slate-900 font-bold text-lg bg-white px-3 py-1 rounded-lg border-2 border-yellow-500">
                   {format(finalValue)}
                 </span>
               </>
@@ -70,11 +76,13 @@ export function ContractComparison({
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-lg p-4 mb-4">
-      <h4 className="text-lg font-bold text-slate-900 mb-3">
-        📊 契約条件の比較 (交渉前 → 交渉後)
+    <div className="bg-white border-2 border-slate-300 rounded-xl p-6 mb-5 shadow-md">
+      <h4 className="text-xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+        <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-sm">
+          📊 契約条件の比較 (交渉前 → 交渉後)
+        </span>
       </h4>
-      <div className="space-y-2">
+      <div className="space-y-3">
         {compareField("supplier_name", "サプライヤー")}
         {compareField(
           "contract_value",
