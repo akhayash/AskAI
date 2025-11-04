@@ -114,6 +114,33 @@ TelemetryHelper.LogWithActivity(
 4. **Events**: Use `LogWithActivity` for important state changes
 5. **Hierarchy**: Activities automatically form parent-child relationships
 
+### Agent Framework Internal Logging
+
+**IMPORTANT**: Always enable Agent Framework internal logging by adding the framework's activity source to the TracerProvider:
+
+```csharp
+using var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .SetResourceBuilder(ResourceBuilder.CreateDefault()
+        .AddService("YourServiceName"))
+    .AddSource("Microsoft.Agents.AI.Workflows*")  // ⚠️ Required for Agent Framework internal traces
+    .AddSource("YourServiceName")
+    .AddHttpClientInstrumentation()
+    .AddOtlpExporter(exporterOptions =>
+    {
+        exporterOptions.Endpoint = new Uri(otlpEndpoint);
+    })
+    .AddConsoleExporter()
+    .Build();
+```
+
+**Benefits**:
+- Traces workflow execution internals (Executor lifecycle, message routing, state transitions)
+- Enables end-to-end distributed tracing across application and framework layers
+- Facilitates debugging and performance analysis
+- Provides visibility into Agent Framework's internal operations
+
+**Reference**: Based on [Microsoft Agent Framework Observability Sample](https://github.com/microsoft/agent-framework/blob/main/dotnet/samples/GettingStarted/Workflows/Observability/AspireDashboard/Program.cs)
+
 ### Efficient Logging Practices
 
 1. **Keep code readable**: Use TelemetryHelper methods to avoid cluttering business logic

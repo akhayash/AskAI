@@ -95,6 +95,7 @@ public static class Program
         using var tracerProvider = Sdk.CreateTracerProviderBuilder()
             .SetResourceBuilder(ResourceBuilder.CreateDefault()
                 .AddService("GraphExecutorWorkflow"))
+            .AddSource("Microsoft.Agents.AI.Workflows*")  // Agent Framework 内部ログ
             .AddSource("GraphExecutorWorkflow")
             .AddHttpClientInstrumentation()
             .AddOtlpExporter(exporterOptions =>

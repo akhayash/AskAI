@@ -65,6 +65,7 @@ public static class TelemetryHelper
         var tracerProvider = Sdk.CreateTracerProviderBuilder()
             .SetResourceBuilder(ResourceBuilder.CreateDefault()
                 .AddService(serviceName))
+            .AddSource("Microsoft.Agents.AI.Workflows*")  // Agent Framework 内部ログ
             .AddSource(serviceName)
             .AddHttpClientInstrumentation()
             .AddOtlpExporter(exporterOptions =>
