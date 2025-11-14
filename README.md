@@ -102,18 +102,40 @@ User → Router (動的選抜) ↔️ Specialist Group (HITL) ↔️ Router (統
 
 **詳細:** [DynamicGroupChatWorkflow README](src/DynamicGroupChatWorkflow/README.md)
 
+### 6. DevUIHost 🆕 **NEW**
+
+AGUI プロトコルを使用して、専門家エージェントを Web API として公開するサーバーです。
+
+```
+Python DevUI / Other Clients → AGUI Protocol (HTTP/SSE) → DevUIHost → Specialist Agents
+```
+
+**特徴:**
+
+- ✅ Microsoft Agent Framework の AGUI プロトコル実装
+- ✅ 10 種類の専門家エージェントを API エンドポイントとして公開
+- ✅ ストリーミング会話とリアルタイムイベント配信
+- ✅ Python DevUI ツールとの連携が可能
+- ✅ 既存のコンソール・WebSocket モードと並行稼働
+
+**詳細:** [DevUIHost README](src/DevUIHost/README.md)
+
 ## 専門家エージェント
 
-システムには以下の 6 つの専門家エージェントが含まれれていますが、DynamicGroupChatWorkflow では状況に応じて柔軟に追加・削除が可能です。
+システムには以下の専門家エージェントが含まれています。各ワークフローでは状況に応じて柔軟に選択・組み合わせが可能です。
 
-| エージェント    | 役割                     |
-| --------------- | ------------------------ |
-| **Contract**    | 契約関連の専門家         |
-| **Spend**       | 支出分析の専門家         |
-| **Negotiation** | 交渉戦略の専門家         |
-| **Sourcing**    | 調達戦略の専門家         |
-| **Knowledge**   | 知識管理の専門家         |
-| **Supplier**    | サプライヤー管理の専門家 |
+| エージェント    | 役割                     | DevUI エンドポイント      |
+| --------------- | ------------------------ | ------------------------- |
+| **Contract**    | 契約関連の専門家         | `/agents/contract`        |
+| **Spend**       | 支出分析の専門家         | `/agents/spend`           |
+| **Negotiation** | 交渉戦略の専門家         | `/agents/negotiation`     |
+| **Sourcing**    | 調達戦略の専門家         | `/agents/sourcing`        |
+| **Knowledge**   | 知識管理の専門家         | `/agents/knowledge`       |
+| **Supplier**    | サプライヤー管理の専門家 | `/agents/supplier`        |
+| **Legal**       | 法務の専門家             | `/agents/legal`           |
+| **Finance**     | 財務の専門家             | `/agents/finance`         |
+| **Procurement** | 調達実務の専門家         | `/agents/procurement`     |
+| **Assistant**   | 総合アシスタント         | `/agents/assistant`       |
 
 ## アーキテクチャ
 
@@ -151,10 +173,11 @@ graph TB
 
 ### 前提条件
 
-- .NET 8 SDK 以降
+- .NET 9 SDK
 - Azure OpenAI サービスへのアクセス
 - Azure CLI（認証用）
 - （オプション）Aspire Dashboard または Application Insights（テレメトリ用）
+- （オプション）Python 3.8+ と agent-framework-devui（DevUI を使用する場合）
 
 ### 環境設定
 
@@ -201,28 +224,57 @@ dotnet build
 
 ## 実行方法
 
-### DynamicGroupChatWorkflow を実行 🆕
+### 実行モード
+
+AskAI プロジェクトは 3 つの実行モードをサポートしています：
+
+1. **コンソールモード**: 従来のターミナルベースの対話型実行
+2. **WebSocket モード**: AdvancedConditionalWorkflow の Web UI 連携
+3. **DevUI/AGUI モード**: Python DevUI や他のクライアントとの API 連携 🆕
+
+### DevUIHost を実行（推奨）🆕
+
+AGUI プロトコルサーバーを起動して、専門家エージェントを API として公開：
+
+```bash
+cd src/DevUIHost
+dotnet run
+```
+
+サーバーは `http://localhost:5000` で起動します。エージェント一覧は `GET /` で確認できます。
+
+#### Python DevUI との連携
+
+Python DevUI ツールをインストール（オプション）：
+
+```bash
+pip install agent-framework-devui --pre
+```
+
+詳細は [DevUIHost README](src/DevUIHost/README.md) を参照してください。
+
+### DynamicGroupChatWorkflow を実行（コンソールモード）
 
 ```bash
 cd src/DynamicGroupChatWorkflow
 dotnet run
 ```
 
-### TaskBasedWorkflow を実行
+### TaskBasedWorkflow を実行（コンソールモード）
 
 ```bash
 cd src/TaskBasedWorkflow
 dotnet run
 ```
 
-### SelectiveGroupChatWorkflow を実行（推奨）
+### SelectiveGroupChatWorkflow を実行（コンソールモード）
 
 ```bash
 cd src/SelectiveGroupChatWorkflow
 dotnet run
 ```
 
-### HandoffWorkflow を実行
+### HandoffWorkflow を実行（コンソールモード）
 
 ```bash
 cd src/HandoffWorkflow
@@ -349,22 +401,19 @@ Moderator Agent にハンドオフします。
 
 ## ワークフロー比較
 
-| 特徴         | DynamicGroupChat 🆕 | TaskBased              | SelectiveGroupChat | Handoff              | GroupChat        |
-| ------------ | ------------------- | ---------------------- | ------------------ | -------------------- | ---------------- |
-| 専門家選抜   | ✅ 動的ハンドオフ   | ✅ Planner が割当      | ✅ 事前選抜 (JSON) | ✅ 動的ハンドオフ    | ❌ 全員参加      |
-| タスク管理   | ❌ なし             | ✅ タスクボード        | ❌ なし            | ❌ なし              | ❌ なし          |
-| 実行方式     | 順次ハンドオフ      | 順次実行               | 並列実行           | 順次ハンドオフ       | ラウンドロビン   |
-| HITL         | ✅ Human Agent      | ❌ なし                | ❌ なし            | ❌ なし              | ❌ なし          |
-| 専門家間対話 | ✅ あり             | ❌ なし                | ❌ なし            | ✅ あり              | ✅ あり          |
-| 統合機能     | ✅ Moderator        | ✅ 最終レポート        | ✅ Moderator       | Router               | なし             |
-| 可視化       | ✅ 可能             | ⚠️ 部分的              | ❌ 困難            | ✅ 可能              | ✅ 可能          |
-| テレメトリ   | ✅ OpenTelemetry    | ❌ なし                | ❌ なし            | ✅ OpenTelemetry     | ❌ なし          |
-| 計画性       | ⭐⭐                | ⭐⭐⭐                 | ⭐                 | ⭐⭐                 | ⭐               |
-| 柔軟性       | ⭐⭐⭐              | ⭐⭐                   | ⭐                 | ⭐⭐⭐               | ⭐               |
-| コスト効率   | ⭐⭐                | ⭐⭐                   | ⭐⭐⭐             | ⭐⭐                 | ⭐               |
-| 応答時間     | ⭐⭐                | ⭐⭐                   | ⭐⭐⭐             | ⭐⭐                 | ⭐               |
-| 対話能力     | ⭐⭐⭐              | ⭐⭐                   | ⭐⭐               | ⭐⭐⭐               | ⭐⭐             |
-| 適用場面     | ユーザー入力が必要  | 複雑な目標の段階的達成 | 効率的な専門家活用 | 専門家間の対話が必要 | 全員の意見が必要 |
+| 特徴           | DevUI 🆕            | DynamicGroupChat    | TaskBased              | SelectiveGroupChat | Handoff              | GroupChat        |
+| -------------- | ------------------- | ------------------- | ---------------------- | ------------------ | -------------------- | ---------------- |
+| 実行モード     | AGUI/API            | コンソール          | コンソール             | コンソール         | コンソール           | コンソール       |
+| 専門家選抜     | クライアント側      | ✅ 動的ハンドオフ   | ✅ Planner が割当      | ✅ 事前選抜 (JSON) | ✅ 動的ハンドオフ    | ❌ 全員参加      |
+| タスク管理     | ❌ なし             | ❌ なし             | ✅ タスクボード        | ❌ なし            | ❌ なし              | ❌ なし          |
+| 実行方式       | 個別エージェント    | 順次ハンドオフ      | 順次実行               | 並列実行           | 順次ハンドオフ       | ラウンドロビン   |
+| HITL           | クライアント側      | ✅ Human Agent      | ❌ なし                | ❌ なし            | ❌ なし              | ❌ なし          |
+| 専門家間対話   | クライアント側      | ✅ あり             | ❌ なし                | ❌ なし            | ✅ あり              | ✅ あり          |
+| 統合機能       | クライアント側      | ✅ Moderator        | ✅ 最終レポート        | ✅ Moderator       | Router               | なし             |
+| 外部ツール連携 | ✅ Python DevUI 等  | ❌ なし             | ❌ なし                | ❌ なし            | ❌ なし              | ❌ なし          |
+| API アクセス   | ✅ HTTP/SSE         | ❌ なし             | ❌ なし                | ❌ なし            | ❌ なし              | ❌ なし          |
+| 柔軟性         | ⭐⭐⭐              | ⭐⭐⭐              | ⭐⭐                   | ⭐                 | ⭐⭐⭐               | ⭐               |
+| 適用場面       | API 連携・DevUI     | ユーザー入力が必要  | 複雑な目標の段階的達成 | 効率的な専門家活用 | 専門家間の対話が必要 | 全員の意見が必要 |
 
 ### ワークフロー選択ガイド
 
@@ -387,15 +436,22 @@ Moderator Agent にハンドオフします。
 - **Yes** → `TaskBasedWorkflow`
 - **No** → `HandoffWorkflow`
 
+**質問: 外部ツールや API 経由でアクセスしたいか？** 🆕
+
+- **Yes** → `DevUIHost` (AGUI プロトコルサーバー)
+- **No** → 上記のコンソールベースのワークフローを選択
+
 ## 技術スタック
 
-- **.NET 8**: アプリケーションフレームワーク
+- **.NET 9**: アプリケーションフレームワーク 🆕
 - **Microsoft.Agents.AI.Workflows**: エージェントワークフローの構築
+- **Microsoft.Agents.AI.Hosting.AGUI.AspNetCore**: AGUI プロトコル実装 🆕
 - **Microsoft.Extensions.AI**: AI モデル統合
 - **Azure.AI.OpenAI**: Azure OpenAI サービス連携
 - **Azure.Identity**: Azure 認証
 - **OpenTelemetry**: テレメトリとログの統合
 - **Microsoft.Extensions.Logging**: 構造化ロギング
+- **ASP.NET Core 9.0**: DevUIHost の Web API フレームワーク 🆕
 
 ## ロギングとテレメトリ
 
