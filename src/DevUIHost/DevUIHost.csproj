@@ -18,6 +18,11 @@
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.0.0-preview.1.25560.10" />
     <PackageReference Include="Microsoft.Bcl.AsyncInterfaces" Version="10.0.0-rc.2.25502.107" />
     <PackageReference Include="System.Net.ServerSentEvents" Version="10.0.0-rc.2.25502.107" />
+    <PackageReference Include="OpenTelemetry" Version="1.10.0" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.10.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.10.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.9.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.9.0" />
   </ItemGroup>
 
   <ItemGroup>

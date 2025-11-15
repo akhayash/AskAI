@@ -1,6 +1,7 @@
 // Copyright (c) Microsoft. All rights reserved.
 
 using System.ComponentModel;
+using System.Diagnostics;
 using Azure.AI.OpenAI;
 using Azure.Identity;
 using Common;
@@ -9,8 +10,30 @@ using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 using Microsoft.Agents.AI.Hosting.OpenAI;
 using Microsoft.Extensions.AI;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// OpenTelemetry configuration for DevUI Traces
+// DevUI expects OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT environment variable
+var otlpEndpoint = builder.Configuration["OTLP_ENDPOINT"]
+    ?? Environment.GetEnvironmentVariable("OTLP_ENDPOINT")
+    ?? builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]
+    ?? Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
+    ?? "http://localhost:4317";
+
+var activitySource = new ActivitySource("DevUIHost");
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(r => r.AddService("DevUIHost"))
+    .WithTracing(t => t
+        .AddSource("DevUIHost")
+        .AddSource("Microsoft.Extensions.AI")
+        .AddSource("Microsoft.Agents.AI.Workflows*")
+        .AddHttpClientInstrumentation()
+        .AddOtlpExporter(options => options.Endpoint = new Uri(otlpEndpoint))
+        .AddConsoleExporter());
 
 // Add services
 builder.Services.AddHttpClient().AddLogging();
@@ -27,22 +50,6 @@ builder.Services.AddCors(options =>
     });
 });
 
-var app = builder.Build();
-
-// Use CORS
-app.UseCors();
-
-// Serve static files from devui-web directory
-var devuiWebPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "devui-web");
-if (Directory.Exists(devuiWebPath))
-{
-    app.UseStaticFiles(new StaticFileOptions
-    {
-        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(devuiWebPath),
-        RequestPath = "/ui"
-    });
-}
-
 // Configuration
 var endpoint = builder.Configuration["AZURE_OPENAI_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
@@ -52,12 +59,15 @@ var deploymentName = builder.Configuration["AZURE_OPENAI_DEPLOYMENT_NAME"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
     ?? "gpt-4o";
 
-// Set up the Azure OpenAI client
+// Set up the Azure OpenAI client with OpenTelemetry
 var chatClient = new AzureOpenAIClient(
     new Uri(endpoint),
-    new DefaultAzureCredential())
+    new AzureCliCredential())
     .GetChatClient(deploymentName)
-    .AsIChatClient();
+    .AsIChatClient()
+    .AsBuilder()
+    .UseOpenTelemetry(sourceName: "DevUIHost")
+    .Build();
 
 // Register the chat client for DI
 builder.Services.AddChatClient(chatClient);
@@ -126,6 +136,22 @@ builder.AddAIAgent("assistant", """
 // Register services for OpenAI responses and conversations (required for DevUI)
 builder.Services.AddOpenAIResponses();
 builder.Services.AddOpenAIConversations();
+
+var app = builder.Build();
+
+// Use CORS
+app.UseCors();
+
+// Serve static files from devui-web directory
+var devuiWebPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "devui-web");
+if (Directory.Exists(devuiWebPath))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(devuiWebPath),
+        RequestPath = "/ui"
+    });
+}
 
 // Create and map specialist agents for AGUI endpoints (backward compatibility)
 var iChatClient = chatClient;
