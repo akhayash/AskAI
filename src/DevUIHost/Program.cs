@@ -5,16 +5,27 @@ using System.Diagnostics;
 using Azure.AI.OpenAI;
 using Azure.Identity;
 using Common;
+using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.DevUI;
 using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
 using Microsoft.Agents.AI.Hosting.OpenAI;
 using Microsoft.Extensions.AI;
+using Microsoft.Agents.AI.Workflows;
 using OpenTelemetry;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Configure detailed logging
+builder.Logging.ClearProviders();
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.IncludeScopes = true;
+    options.TimestampFormat = "HH:mm:ss.fff ";
+});
+builder.Logging.SetMinimumLevel(LogLevel.Trace);
 
 // OpenTelemetry configuration for DevUI Traces
 // DevUI expects OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_ENDPOINT environment variable
@@ -133,6 +144,37 @@ builder.AddAIAgent("assistant", """
 複雑な質問の場合は、専門家エージェントに相談することもできます。
 """);
 
+// シンプルなワークフローの登録 (ChatProtocol対応)
+builder.AddWorkflow("simple-review-workflow", (sp, key) =>
+{
+    var chatClientFromDI = sp.GetRequiredService<IChatClient>();
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    var logger = loggerFactory.CreateLogger("SimpleWorkflow");
+
+    // ChatProtocol entry point: Receives List<ChatMessage> and forwards to first executor
+    var chatForwarder = new ChatForwardingExecutor($"{key}_forwarder");
+
+    // Executor 1: 専門家レビュー (入力: List<ChatMessage>)
+    var reviewerExecutor = new SimpleReviewerExecutor(chatClientFromDI, $"{key}_reviewer", logger);
+
+    // Executor 2: 要約 (入力: string from ReviewerExecutor)
+    var summarizerExecutor = new SimpleSummarizerExecutor(chatClientFromDI, $"{key}_summarizer", logger);
+
+    // Sequential workflow: ChatMessage → Forwarder → Reviewer → Summarizer
+    var workflowBuilder = new WorkflowBuilder(chatForwarder);
+    workflowBuilder.AddEdge(chatForwarder, reviewerExecutor);
+    workflowBuilder.AddEdge(reviewerExecutor, summarizerExecutor);
+
+    // ⚠️ 重要: WithOutputFrom()を設定しないとワークフローの出力が生成されない
+    workflowBuilder.WithOutputFrom(summarizerExecutor);
+
+    // ⚠️ 重要: WorkflowにName属性を設定しないとAddWorkflowのバリデーションエラーになる
+    workflowBuilder.WithName(key);
+    workflowBuilder.WithDescription("調達専門家によるレビューと要約の2ステップワークフロー");
+
+    return workflowBuilder.Build();
+}).AddAsAIAgent();
+
 // Register services for OpenAI responses and conversations (required for DevUI)
 builder.Services.AddOpenAIResponses();
 builder.Services.AddOpenAIConversations();
@@ -226,7 +268,7 @@ Console.WriteLine("━━━━━━━━━━━━━━━━━━━━�
 Console.WriteLine($"✓ Server URL: {serverUrl}");
 Console.WriteLine($"✓ DevUI (Official): {serverUrl}/devui");
 Console.WriteLine($"✓ Custom Web UI: {serverUrl}/ui/");
-Console.WriteLine($"✓ Agents available: 10");
+Console.WriteLine($"✓ Agents/Workflows available: 11");
 Console.WriteLine($"✓ Agent List: GET /");
 Console.WriteLine($"✓ AGUI Endpoints: /agents/*");
 Console.WriteLine($"✓ OpenAI API: /v1/responses");
@@ -239,3 +281,113 @@ Console.WriteLine($"   3. AGUI API:        {serverUrl}/agents/contract");
 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 await app.RunAsync();
+
+// ===== Executor Classes =====
+
+/// <summary>
+/// 質問に対して詳細な専門家レビューを生成するExecutor
+/// ChatProtocol対応: List<ChatMessage>を入力として受け取る
+/// </summary>
+public class SimpleReviewerExecutor : Executor<List<ChatMessage>, string>
+{
+    private readonly ChatClientAgent _agent;
+    private readonly ILogger _logger;
+
+    public SimpleReviewerExecutor(IChatClient chatClient, string id, ILogger logger) : base(id)
+    {
+        _logger = logger;
+        var instructions = """
+あなたは調達・契約の専門家です。
+質問に対して詳細な分析と推奨事項を提供してください。
+実用的で具体的な回答を心がけてください。
+""";
+        // 正しい引数順: chatClient, instructions, name, description
+        _agent = new ChatClientAgent(
+            chatClient,
+            instructions: instructions,
+            name: "Reviewer",
+            description: "Procurement Expert");
+    }
+
+    public override async ValueTask<string> HandleAsync(
+        List<ChatMessage> messages,
+        IWorkflowContext context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            // 最後のユーザーメッセージから質問を取得
+            var question = messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text ?? "質問が見つかりません";
+            _logger.LogInformation("🔍 ReviewerExecutor開始: {Question}", question);
+            _logger.LogInformation("📞 Azure OpenAI呼び出し中...");
+
+            var response = await _agent.RunAsync(messages, cancellationToken: cancellationToken);
+
+            var detailedReview = response.Messages?.LastOrDefault()?.Text ?? "回答を生成できませんでした。";
+            _logger.LogInformation("✅ ReviewerExecutor完了: {Length}文字", detailedReview.Length);
+
+            // Yield intermediate output to workflow
+            await context.YieldOutputAsync(detailedReview, cancellationToken);
+
+            return detailedReview;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ ReviewerExecutor失敗: {Message}", ex.Message);
+            throw;
+        }
+    }
+}
+
+/// <summary>
+/// 専門家レビューを3つの要点に要約するExecutor
+/// 入力: ReviewerExecutorからのstring
+/// </summary>
+public class SimpleSummarizerExecutor : Executor<string, string>
+{
+    private readonly ChatClientAgent _agent;
+    private readonly ILogger _logger;
+
+    public SimpleSummarizerExecutor(IChatClient chatClient, string id, ILogger logger) : base(id)
+    {
+        _logger = logger;
+        var instructions = """
+与えられたレビューテキストを3つの要点にまとめてください。
+箇条書きで簡潔に出力してください。
+""";
+        // 正しい引数順: chatClient, instructions, name, description
+        _agent = new ChatClientAgent(
+            chatClient,
+            instructions: instructions,
+            name: "Summarizer",
+            description: "Summary Expert");
+    }
+
+    public override async ValueTask<string> HandleAsync(
+        string reviewText,
+        IWorkflowContext context,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("📝 SummarizerExecutor開始: {Length}文字の入力", reviewText?.Length ?? 0);
+            var messages = new[] { new ChatMessage(ChatRole.User, reviewText ?? "入力なし") };
+            _logger.LogInformation("📞 Azure OpenAI呼び出し中...");
+
+            var response = await _agent.RunAsync(messages, cancellationToken: cancellationToken);
+
+            var summary = response.Messages?.LastOrDefault()?.Text ?? "要約を生成できませんでした。";
+            _logger.LogInformation("✅ SummarizerExecutor完了: {Length}文字", summary.Length);
+
+            // Yield final output to workflow
+            await context.YieldOutputAsync(summary, cancellationToken);
+
+            return summary;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ SummarizerExecutor失敗: {Message}", ex.Message);
+            throw;
+        }
+    }
+}
