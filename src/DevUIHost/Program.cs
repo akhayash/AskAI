@@ -29,6 +29,17 @@ var app = builder.Build();
 // Use CORS
 app.UseCors();
 
+// Serve static files from devui-web directory
+var devuiWebPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "devui-web");
+if (Directory.Exists(devuiWebPath))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(devuiWebPath),
+        RequestPath = "/ui"
+    });
+}
+
 // Configuration
 var endpoint = builder.Configuration["AZURE_OPENAI_ENDPOINT"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_ENDPOINT")
@@ -101,13 +112,19 @@ app.MapGet("/", () => Results.Json(new
     }
 }));
 
+var serverUrl = builder.Configuration["urls"] ?? "http://localhost:5000";
 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 Console.WriteLine("🚀 AskAI DevUI Server Started");
 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-Console.WriteLine($"✓ Server URL: {builder.Configuration["urls"] ?? "http://localhost:5000"}");
+Console.WriteLine($"✓ Server URL: {serverUrl}");
+Console.WriteLine($"✓ Web UI: {serverUrl}/ui/");
 Console.WriteLine($"✓ Agents available: 10");
 Console.WriteLine($"✓ Agent List: GET /");
 Console.WriteLine($"✓ AGUI Protocol: Microsoft Agent Framework");
+Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+Console.WriteLine();
+Console.WriteLine("💡 ブラウザで Web UI を開くには:");
+Console.WriteLine($"   {serverUrl}/ui/");
 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 await app.RunAsync();

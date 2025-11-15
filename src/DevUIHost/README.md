@@ -1,6 +1,6 @@
 # DevUIHost - AGUI Server for AskAI Workflows
 
-DevUIHost は、Microsoft Agent Framework の AGUI プロトコルを使用して、AskAI プロジェクトの専門家エージェントを Web API として公開するサーバーです。
+DevUIHost は、Microsoft Agent Framework の AGUI プロトコルを使用して、AskAI プロジェクトの専門家エージェントを Web API として公開するサーバーです。**Web UI** も含まれており、ブラウザから直接エージェントと対話できます。
 
 ## 概要
 
@@ -59,6 +59,24 @@ dotnet run
 ```
 
 サーバーは `http://localhost:5000` で起動します。
+
+### Web UI にアクセス 🆕
+
+ブラウザで以下の URL を開いてください：
+
+```
+http://localhost:5000/ui/
+```
+
+Web UI では以下のことができます：
+
+- ✅ エージェント一覧の表示
+- ✅ エージェントの選択
+- ✅ チャット形式での対話
+- ✅ 会話履歴の保持
+- ✅ モダンな UI デザイン
+
+![DevUI Web Interface](screenshot-placeholder.png)
 
 ### エージェント一覧の確認
 

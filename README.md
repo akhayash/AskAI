@@ -104,14 +104,16 @@ User → Router (動的選抜) ↔️ Specialist Group (HITL) ↔️ Router (統
 
 ### 6. DevUIHost 🆕 **NEW**
 
-AGUI プロトコルを使用して、専門家エージェントを Web API として公開するサーバーです。
+AGUI プロトコルを使用して、専門家エージェントを Web API として公開するサーバーです。**Web UI 付き**でブラウザから直接エージェントと対話できます。
 
 ```
+Browser → Web UI (http://localhost:5000/ui/) → DevUIHost → Specialist Agents
 Python DevUI / Other Clients → AGUI Protocol (HTTP/SSE) → DevUIHost → Specialist Agents
 ```
 
 **特徴:**
 
+- ✅ **ブラウザベースの Web UI** - エージェントとチャット形式で対話 🆕
 - ✅ Microsoft Agent Framework の AGUI プロトコル実装
 - ✅ 10 種類の専門家エージェントを API エンドポイントとして公開
 - ✅ ストリーミング会話とリアルタイムイベント配信
@@ -241,7 +243,22 @@ cd src/DevUIHost
 dotnet run
 ```
 
-サーバーは `http://localhost:5000` で起動します。エージェント一覧は `GET /` で確認できます。
+サーバーは `http://localhost:5000` で起動します。
+
+**Web UI でエージェントと対話:**
+
+ブラウザで以下を開く：
+```
+http://localhost:5000/ui/
+```
+
+- 左側のサイドバーからエージェントを選択
+- チャット形式でエージェントと対話
+- 会話履歴が保持されます
+
+**API 経由でアクセス:**
+
+エージェント一覧は `GET /` で確認できます。各エージェントのエンドポイントは `/agents/{name}` です。
 
 #### Python DevUI との連携
 
