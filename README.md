@@ -104,20 +104,22 @@ User → Router (動的選抜) ↔️ Specialist Group (HITL) ↔️ Router (統
 
 ### 6. DevUIHost 🆕 **NEW**
 
-AGUI プロトコルを使用して、専門家エージェントを Web API として公開するサーバーです。**Web UI 付き**でブラウザから直接エージェントと対話できます。
+AGUI プロトコルを使用して、専門家エージェントを Web API として公開するサーバーです。**Microsoft 公式 DevUI** と**カスタム Web UI** の両方でブラウザから直接エージェントと対話できます。
 
 ```
-Browser → Web UI (http://localhost:5000/ui/) → DevUIHost → Specialist Agents
+Browser → Microsoft DevUI (http://localhost:5000/devui) → DevUIHost → Specialist Agents 🆕
+Browser → Custom Web UI (http://localhost:5000/ui/) → DevUIHost → Specialist Agents
 Python DevUI / Other Clients → AGUI Protocol (HTTP/SSE) → DevUIHost → Specialist Agents
 ```
 
 **特徴:**
 
-- ✅ **ブラウザベースの Web UI** - エージェントとチャット形式で対話 🆕
+- ✅ **Microsoft 公式 DevUI** - Agent Framework 標準の開発用 UI 🆕
+- ✅ **カスタム Web UI** - シンプルなチャットインターフェース
 - ✅ Microsoft Agent Framework の AGUI プロトコル実装
 - ✅ 10 種類の専門家エージェントを API エンドポイントとして公開
 - ✅ ストリーミング会話とリアルタイムイベント配信
-- ✅ Python DevUI ツールとの連携が可能
+- ✅ OpenAI 互換 API エンドポイント
 - ✅ 既存のコンソール・WebSocket モードと並行稼働
 
 **詳細:** [DevUIHost README](src/DevUIHost/README.md)
@@ -245,13 +247,25 @@ dotnet run
 
 サーバーは `http://localhost:5000` で起動します。
 
-**Web UI でエージェントと対話:**
+**オプション 1: Microsoft 公式 DevUI（推奨）🆕**
+
+ブラウザで以下を開く：
+```
+http://localhost:5000/devui
+```
+
+- Microsoft Agent Framework 標準の開発用 UI
+- すべてのエージェントとワークフローにアクセス
+- デバッグツール統合
+
+**オプション 2: カスタム Web UI**
 
 ブラウザで以下を開く：
 ```
 http://localhost:5000/ui/
 ```
 
+- シンプルなチャットインターフェース
 - 左側のサイドバーからエージェントを選択
 - チャット形式でエージェントと対話
 - 会話履歴が保持されます

@@ -4,7 +4,10 @@ using System.ComponentModel;
 using Azure.AI.OpenAI;
 using Azure.Identity;
 using Common;
+using Microsoft.Agents.AI.DevUI;
+using Microsoft.Agents.AI.Hosting;
 using Microsoft.Agents.AI.Hosting.AGUI.AspNetCore;
+using Microsoft.Agents.AI.Hosting.OpenAI;
 using Microsoft.Extensions.AI;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -49,15 +52,83 @@ var deploymentName = builder.Configuration["AZURE_OPENAI_DEPLOYMENT_NAME"]
     ?? Environment.GetEnvironmentVariable("AZURE_OPENAI_DEPLOYMENT_NAME")
     ?? "gpt-4o";
 
-// Create chat client
+// Set up the Azure OpenAI client
 var chatClient = new AzureOpenAIClient(
     new Uri(endpoint),
     new DefaultAzureCredential())
-    .GetChatClient(deploymentName);
+    .GetChatClient(deploymentName)
+    .AsIChatClient();
 
-// Create and map specialist agents using the Common AgentFactory
-var iChatClient = chatClient.AsIChatClient();
+// Register the chat client for DI
+builder.Services.AddChatClient(chatClient);
 
+// Register specialist agents using the hosting package
+builder.AddAIAgent("contract", """
+あなたは Contract (契約) 専門家です。
+契約条項、契約リスク、法的義務、契約期間、更新条件などの観点から分析を提供します。
+簡潔で実用的な回答を心がけてください。
+""");
+
+builder.AddAIAgent("spend", """
+あなたは Spend Analysis (支出分析) 専門家です。
+コスト構造、支出トレンド、予算管理、コスト削減機会などの観点から分析を提供します。
+簡潔で実用的な回答を心がけてください。
+""");
+
+builder.AddAIAgent("negotiation", """
+あなたは Negotiation (交渉) 専門家です。
+交渉戦略、条件改善提案、価格交渉、契約条件の最適化などの観点から分析を提供します。
+簡潔で実用的な回答を心がけてください。
+""");
+
+builder.AddAIAgent("sourcing", """
+あなたは Sourcing (調達) 専門家です。
+サプライヤー選定、調達戦略、品質管理、納期管理などの観点から分析を提供します。
+簡潔で実用的な回答を心がけてください。
+""");
+
+builder.AddAIAgent("knowledge", """
+あなたは Knowledge Management (ナレッジ管理) 専門家です。
+過去の事例、ベストプラクティス、組織の知見、業界標準などの観点から分析を提供します。
+簡潔で実用的な回答を心がけてください。
+""");
+
+builder.AddAIAgent("supplier", """
+あなたは Supplier Management (サプライヤー管理) 専門家です。
+サプライヤーの信頼性、パフォーマンス評価、リスク評価、関係管理などの観点から分析を提供します。
+簡潔で実用的な回答を心がけてください。
+""");
+
+builder.AddAIAgent("legal", """
+あなたは Legal (法務) 専門家です。
+法的リスク、コンプライアンス、規制要件、法的義務、知的財産権などの観点から分析を提供します。
+簡潔で実用的な回答を心がけてください。
+""");
+
+builder.AddAIAgent("finance", """
+あなたは Finance (財務) 専門家です。
+財務影響、予算管理、ROI分析、キャッシュフロー、財務リスクなどの観点から分析を提供します。
+簡潔で実用的な回答を心がけてください。
+""");
+
+builder.AddAIAgent("procurement", """
+あなたは Procurement (調達実務) 専門家です。
+調達プロセス、購買手続き、契約管理、サプライヤー管理、調達戦略などの観点から分析を提供します。
+簡潔で実用的な回答を心がけてください。
+""");
+
+builder.AddAIAgent("assistant", """
+あなたは調達・購買業務の専門アシスタントです。
+契約、支出分析、交渉、調達戦略、知識管理、サプライヤー管理に関する質問に答えます。
+複雑な質問の場合は、専門家エージェントに相談することもできます。
+""");
+
+// Register services for OpenAI responses and conversations (required for DevUI)
+builder.Services.AddOpenAIResponses();
+builder.Services.AddOpenAIConversations();
+
+// Create and map specialist agents for AGUI endpoints (backward compatibility)
+var iChatClient = chatClient;
 var contractAgent = AgentFactory.CreateContractAgent(iChatClient);
 var spendAgent = AgentFactory.CreateSpendAgent(iChatClient);
 var negotiationAgent = AgentFactory.CreateNegotiationAgent(iChatClient);
@@ -79,7 +150,7 @@ app.MapAGUI("/agents/legal", legalAgent);
 app.MapAGUI("/agents/finance", financeAgent);
 app.MapAGUI("/agents/procurement", procurementAgent);
 
-// Create a general purpose assistant
+// Create a general purpose assistant for AGUI
 var assistantAgent = iChatClient.CreateAIAgent(
     name: "ProcurementAssistant",
     instructions: """
@@ -90,6 +161,16 @@ var assistantAgent = iChatClient.CreateAIAgent(
 );
 
 app.MapAGUI("/agents/assistant", assistantAgent);
+
+// Map endpoints for OpenAI responses and conversations (required for DevUI)
+app.MapOpenAIResponses();
+app.MapOpenAIConversations();
+
+// Map DevUI endpoint to /devui
+if (builder.Environment.IsDevelopment())
+{
+    app.MapDevUI();
+}
 
 // Root endpoint with agent list
 app.MapGet("/", () => Results.Json(new
@@ -117,14 +198,18 @@ Console.WriteLine("━━━━━━━━━━━━━━━━━━━━�
 Console.WriteLine("🚀 AskAI DevUI Server Started");
 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 Console.WriteLine($"✓ Server URL: {serverUrl}");
-Console.WriteLine($"✓ Web UI: {serverUrl}/ui/");
+Console.WriteLine($"✓ DevUI (Official): {serverUrl}/devui");
+Console.WriteLine($"✓ Custom Web UI: {serverUrl}/ui/");
 Console.WriteLine($"✓ Agents available: 10");
 Console.WriteLine($"✓ Agent List: GET /");
-Console.WriteLine($"✓ AGUI Protocol: Microsoft Agent Framework");
+Console.WriteLine($"✓ AGUI Endpoints: /agents/*");
+Console.WriteLine($"✓ OpenAI API: /v1/responses");
 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 Console.WriteLine();
-Console.WriteLine("💡 ブラウザで Web UI を開くには:");
-Console.WriteLine($"   {serverUrl}/ui/");
+Console.WriteLine("💡 使用方法:");
+Console.WriteLine($"   1. Microsoft DevUI: {serverUrl}/devui");
+Console.WriteLine($"   2. Custom Web UI:   {serverUrl}/ui/");
+Console.WriteLine($"   3. AGUI API:        {serverUrl}/agents/contract");
 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 await app.RunAsync();

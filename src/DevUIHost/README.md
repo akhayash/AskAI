@@ -1,10 +1,18 @@
 # DevUIHost - AGUI Server for AskAI Workflows
 
-DevUIHost は、Microsoft Agent Framework の AGUI プロトコルを使用して、AskAI プロジェクトの専門家エージェントを Web API として公開するサーバーです。**Web UI** も含まれており、ブラウザから直接エージェントと対話できます。
+DevUIHost は、Microsoft Agent Framework の AGUI プロトコルを使用して、AskAI プロジェクトの専門家エージェントを Web API として公開するサーバーです。**Microsoft 公式 DevUI** と**カスタム Web UI** の両方が含まれており、ブラウザから直接エージェントと対話できます。
 
 ## 概要
 
-このサーバーは、以下の専門家エージェントを AGUI プロトコル経由で利用可能にします：
+このサーバーは、以下の専門家エージェントを複数の方法で利用可能にします：
+
+1. **Microsoft 公式 DevUI** (`/devui`) - Agent Framework 標準の開発用 UI 🆕
+2. **カスタム Web UI** (`/ui/`) - シンプルなチャットインターフェース
+3. **AGUI API エンドポイント** (`/agents/*`) - プログラマティックアクセス
+
+### 専門家エージェント
+
+このサーバーは、以下の専門家エージェントを提供します：
 
 - **Contract Agent** (`/agents/contract`) - 契約関連の専門家
 - **Spend Agent** (`/agents/spend`) - 支出分析の専門家  
@@ -60,7 +68,24 @@ dotnet run
 
 サーバーは `http://localhost:5000` で起動します。
 
-### Web UI にアクセス 🆕
+### UI にアクセス
+
+#### オプション 1: Microsoft 公式 DevUI（推奨）🆕
+
+ブラウザで以下の URL を開いてください：
+
+```
+http://localhost:5000/devui
+```
+
+**公式 DevUI の機能：**
+- ✅ Microsoft Agent Framework 標準の UI
+- ✅ すべての登録済みエージェントの表示
+- ✅ ワークフローのサポート
+- ✅ デバッグツール統合
+- ✅ OpenAI API 互換エンドポイント
+
+#### オプション 2: カスタム Web UI
 
 ブラウザで以下の URL を開いてください：
 
@@ -68,15 +93,12 @@ dotnet run
 http://localhost:5000/ui/
 ```
 
-Web UI では以下のことができます：
-
-- ✅ エージェント一覧の表示
+**カスタム Web UI の機能：**
+- ✅ シンプルなチャットインターフェース
 - ✅ エージェントの選択
 - ✅ チャット形式での対話
 - ✅ 会話履歴の保持
 - ✅ モダンな UI デザイン
-
-![DevUI Web Interface](screenshot-placeholder.png)
 
 ### エージェント一覧の確認
 
