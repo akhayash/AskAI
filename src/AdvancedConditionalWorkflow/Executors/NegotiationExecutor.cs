@@ -13,7 +13,7 @@ namespace AdvancedConditionalWorkflow.Executors;
 /// <summary>
 /// 交渉提案を生成する Executor
 /// </summary>
-public class NegotiationExecutor : Executor<(ContractInfo Contract, RiskAssessment Risk, int Iteration), (ContractInfo Contract, RiskAssessment Risk, NegotiationProposal Proposal, int Iteration)>
+public class NegotiationExecutor : Executor<NegotiationStateOutput, NegotiationExecutionOutput>
 {
     private readonly ChatClientAgent _agent;
     private readonly ILogger? _logger;
@@ -25,22 +25,24 @@ public class NegotiationExecutor : Executor<(ContractInfo Contract, RiskAssessme
         _logger = logger;
     }
 
-    public override async ValueTask<(ContractInfo Contract, RiskAssessment Risk, NegotiationProposal Proposal, int Iteration)> HandleAsync(
-        (ContractInfo Contract, RiskAssessment Risk, int Iteration) input,
+    public override async ValueTask<NegotiationExecutionOutput> HandleAsync(
+        NegotiationStateOutput input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
+        var contract = input.Contract;
+        var risk = input.Risk;
+        var iteration = input.Iteration;
+
         using var activity = Common.TelemetryHelper.StartActivity(
             Program.ActivitySource,
             "NegotiationProposalGeneration",
             new Dictionary<string, object>
             {
-                ["iteration"] = input.Iteration,
-                ["current_risk_score"] = input.Risk.OverallRiskScore,
-                ["supplier"] = input.Contract.SupplierName
+                ["iteration"] = iteration,
+                ["current_risk_score"] = risk.OverallRiskScore,
+                ["supplier"] = contract.SupplierName
             });
-
-        var (contract, risk, iteration) = input;
 
         _logger?.LogInformation("💼 交渉提案を生成中 (反復 {Iteration}/3)...", iteration);
         _logger?.LogInformation("  現在のリスクスコア: {RiskScore}/100", risk.OverallRiskScore);
@@ -216,7 +218,13 @@ updated_contractには、変更する契約条件のみを含めてください�
             }
 
             // 更新された契約を返す
-            return (updatedContract, risk, result, iteration);
+            return new NegotiationExecutionOutput
+            {
+                Contract = updatedContract,
+                Risk = risk,
+                Proposal = result,
+                Iteration = iteration
+            };
         }
         catch (Exception ex)
         {
@@ -236,7 +244,13 @@ updated_contractには、変更する契約条件のみを含めてください�
                 Rationale = "標準的なリスク軽減策"
             };
 
-            return (contract, risk, fallbackProposal, iteration);
+            return new NegotiationExecutionOutput
+            {
+                Contract = contract,
+                Risk = risk,
+                Proposal = fallbackProposal,
+                Iteration = iteration
+            };
         }
     }
 

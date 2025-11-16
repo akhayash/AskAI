@@ -11,7 +11,7 @@ namespace AdvancedConditionalWorkflow.Executors;
 /// <summary>
 /// 交渉提案とリスク評価を結合して評価 Executor に渡す
 /// </summary>
-public class NegotiationContextExecutor : Executor<(ContractInfo Contract, RiskAssessment Risk, NegotiationProposal Proposal, int Iteration), (ContractInfo Contract, EvaluationResult Evaluation)>
+public class NegotiationContextExecutor : Executor<NegotiationExecutionOutput, ContractEvaluationOutput>
 {
     private readonly ILogger? _logger;
 
@@ -21,14 +21,17 @@ public class NegotiationContextExecutor : Executor<(ContractInfo Contract, RiskA
         _logger = logger;
     }
 
-    public override async ValueTask<(ContractInfo Contract, EvaluationResult Evaluation)> HandleAsync(
-        (ContractInfo Contract, RiskAssessment Risk, NegotiationProposal Proposal, int Iteration) input,
+    public override async ValueTask<ContractEvaluationOutput> HandleAsync(
+        NegotiationExecutionOutput input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
         await Task.CompletedTask;
 
-        var (contract, originalRisk, proposal, iteration) = input;
+        var contract = input.Contract;
+        var originalRisk = input.Risk;
+        var proposal = input.Proposal;
+        var iteration = input.Iteration;
 
         using var activity = TelemetryHelper.StartActivity(
             Program.ActivitySource,
@@ -90,7 +93,11 @@ public class NegotiationContextExecutor : Executor<(ContractInfo Contract, RiskA
             continueNegotiation ? "✅" : "❌",
             !continueNegotiation ? "✅" : "❌");
 
-        return (contract, evaluation);
+        return new ContractEvaluationOutput
+        {
+            Contract = contract,
+            Evaluation = evaluation
+        };
     }
 
     private static string GenerateEvaluationComment(
