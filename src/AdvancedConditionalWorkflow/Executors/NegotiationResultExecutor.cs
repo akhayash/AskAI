@@ -11,7 +11,7 @@ namespace AdvancedConditionalWorkflow.Executors;
 /// <summary>
 /// 交渉結果を最終決定に変換する Executor
 /// </summary>
-public class NegotiationResultExecutor : Executor<(ContractInfo Contract, EvaluationResult Evaluation), (ContractInfo Contract, RiskAssessment Risk)>
+public class NegotiationResultExecutor : Executor<ContractEvaluationOutput, ContractRiskOutput>
 {
     private readonly ILogger? _logger;
 
@@ -21,24 +21,25 @@ public class NegotiationResultExecutor : Executor<(ContractInfo Contract, Evalua
         _logger = logger;
     }
 
-    public override async ValueTask<(ContractInfo Contract, RiskAssessment Risk)> HandleAsync(
-        (ContractInfo Contract, EvaluationResult Evaluation) input,
+    public override async ValueTask<ContractRiskOutput> HandleAsync(
+        ContractEvaluationOutput input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
+        var contract = input.Contract;
+        var evaluation = input.Evaluation;
+
         using var activity = TelemetryHelper.StartActivity(
             Program.ActivitySource,
             "NegotiationResultConversion",
             new Dictionary<string, object>
             {
-                ["iteration"] = input.Evaluation.Iteration,
-                ["final_risk_score"] = input.Evaluation.NewRiskScore,
-                ["is_improved"] = input.Evaluation.IsImproved
+                ["iteration"] = evaluation.Iteration,
+                ["final_risk_score"] = evaluation.NewRiskScore,
+                ["is_improved"] = evaluation.IsImproved
             });
 
         await Task.CompletedTask;
-
-        var (contract, evaluation) = input;
 
         _logger?.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         _logger?.LogInformation("📊 交渉結果をリスク評価に変換中");
@@ -69,6 +70,10 @@ public class NegotiationResultExecutor : Executor<(ContractInfo Contract, Evalua
             "交渉結果変換完了: スコア={0}, レベル={1}",
             updatedRisk.OverallRiskScore, updatedRisk.RiskLevel);
 
-        return (contract, updatedRisk);
+        return new ContractRiskOutput
+        {
+            Contract = contract,
+            Risk = updatedRisk
+        };
     }
 }

@@ -11,7 +11,7 @@ namespace AdvancedConditionalWorkflow.Executors;
 /// <summary>
 /// 交渉ループの反復カウンターを管理する Executor
 /// </summary>
-public class NegotiationIteratorExecutor : Executor<(ContractInfo Contract, RiskAssessment Risk), (ContractInfo Contract, RiskAssessment Risk, int Iteration)>
+public class NegotiationIteratorExecutor : Executor<ContractRiskOutput, NegotiationStateOutput>
 {
     private readonly ILogger? _logger;
     private const string IterationCountKey = "NegotiationIterationCount";
@@ -22,8 +22,8 @@ public class NegotiationIteratorExecutor : Executor<(ContractInfo Contract, Risk
         _logger = logger;
     }
 
-    public override async ValueTask<(ContractInfo Contract, RiskAssessment Risk, int Iteration)> HandleAsync(
-        (ContractInfo Contract, RiskAssessment Risk) input,
+    public override async ValueTask<NegotiationStateOutput> HandleAsync(
+        ContractRiskOutput input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
@@ -59,6 +59,11 @@ public class NegotiationIteratorExecutor : Executor<(ContractInfo Contract, Risk
             "反復カウンター更新完了: {0}/3",
             iteration);
 
-        return (input.Contract, input.Risk, iteration);
+        return new NegotiationStateOutput
+        {
+            Contract = input.Contract,
+            Risk = input.Risk,
+            Iteration = iteration
+        };
     }
 }

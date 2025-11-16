@@ -11,7 +11,7 @@ namespace AdvancedConditionalWorkflow.Executors;
 /// <summary>
 /// 交渉ループのループバック時に、EvaluationResult から次の反復のための入力を準備する Executor
 /// </summary>
-public class NegotiationLoopBackExecutor : Executor<(ContractInfo Contract, EvaluationResult Evaluation), (ContractInfo Contract, RiskAssessment Risk, int Iteration)>
+public class NegotiationLoopBackExecutor : Executor<ContractEvaluationOutput, NegotiationStateOutput>
 {
     private readonly ILogger? _logger;
 
@@ -21,12 +21,13 @@ public class NegotiationLoopBackExecutor : Executor<(ContractInfo Contract, Eval
         _logger = logger;
     }
 
-    public override async ValueTask<(ContractInfo Contract, RiskAssessment Risk, int Iteration)> HandleAsync(
-        (ContractInfo Contract, EvaluationResult Evaluation) input,
+    public override async ValueTask<NegotiationStateOutput> HandleAsync(
+        ContractEvaluationOutput input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
-        var (contract, evaluation) = input;
+        var contract = input.Contract;
+        var evaluation = input.Evaluation;
 
         using var activity = TelemetryHelper.StartActivity(
             Program.ActivitySource,
@@ -86,6 +87,11 @@ public class NegotiationLoopBackExecutor : Executor<(ContractInfo Contract, Eval
             evaluation.Iteration, nextIteration,
             originalRisk.OverallRiskScore, updatedRisk.OverallRiskScore);
 
-        return (contract, updatedRisk, nextIteration);
+        return new NegotiationStateOutput
+        {
+            Contract = contract,
+            Risk = updatedRisk,
+            Iteration = nextIteration
+        };
     }
 }

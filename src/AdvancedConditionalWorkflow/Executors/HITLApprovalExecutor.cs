@@ -12,7 +12,7 @@ namespace AdvancedConditionalWorkflow.Executors;
 /// <summary>
 /// Human-in-the-Loop (HITL) 承認を実行する Executor
 /// </summary>
-public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessment Risk), FinalDecision>
+public class HITLApprovalExecutor : Executor<ContractRiskOutput, FinalDecision>
 {
     private readonly string _approvalType;
     private readonly ILogger? _logger;
@@ -25,22 +25,23 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
     }
 
     public override async ValueTask<FinalDecision> HandleAsync(
-        (ContractInfo Contract, RiskAssessment Risk) input,
+        ContractRiskOutput input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
+        var contract = input.Contract;
+        var risk = input.Risk;
+
         using var activity = TelemetryHelper.StartActivity(
             Program.ActivitySource,
             $"HITL_{_approvalType}",
             new Dictionary<string, object>
             {
                 ["approval_type"] = _approvalType,
-                ["risk_score"] = input.Risk.OverallRiskScore,
-                ["supplier"] = input.Contract.SupplierName,
-                ["contract_value"] = input.Contract.ContractValue
+                ["risk_score"] = risk.OverallRiskScore,
+                ["supplier"] = contract.SupplierName,
+                ["contract_value"] = contract.ContractValue
             });
-
-        var (contract, risk) = input;
 
         _logger?.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         _logger?.LogInformation("👤 HITL: 人間による承認が必要です");
@@ -105,13 +106,23 @@ public class HITLApprovalExecutor : Executor<(ContractInfo Contract, RiskAssessm
             _logger?.LogWarning("  ⚠️ 評価履歴の取得に失敗: {Message}", ex.Message);
         }
 
-        // Communicationインターフェース経由でHITL要求
+        // Communicationインターフェース経由でHITL要求 (DevUIHost環境では自動承認)
         var promptMessage = BuildPromptMessage(contract, risk);
-        var approved = await Program.Communication!.RequestHITLApprovalAsync(
-            _approvalType,
-            contract,
-            risk,
-            promptMessage);
+        bool approved;
+        if (Program.Communication != null)
+        {
+            approved = await Program.Communication.RequestHITLApprovalAsync(
+                _approvalType,
+                contract,
+                risk,
+                promptMessage);
+        }
+        else
+        {
+            // DevUIHost環境: 自動承認
+            _logger?.LogInformation("⚠️ Communication が利用不可のため自動承認");
+            approved = true;
+        }
 
         activity?.SetTag("approved", approved);
         activity?.SetTag("user_response", approved ? "Y" : "N");

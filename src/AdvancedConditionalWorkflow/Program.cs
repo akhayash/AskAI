@@ -435,20 +435,20 @@ public static class Program
         builder
             // 低リスク (≤30): 即座に承認
             .AddEdge(aggregator, lowRiskApproval,
-                condition: ((ContractInfo, RiskAssessment)? data) =>
-                    data.HasValue && data.Value.Item2.OverallRiskScore <= 30)
+                condition: (ContractRiskOutput? data) =>
+                    data != null && data.Risk.OverallRiskScore <= 30)
 
             // 中リスク (31-70): 交渉ループへ
             .AddEdge(aggregator, negotiationStateInit,
-                condition: ((ContractInfo, RiskAssessment)? data) =>
-                    data.HasValue &&
-                    data.Value.Item2.OverallRiskScore > 30 &&
-                    data.Value.Item2.OverallRiskScore <= 70)
+                condition: (ContractRiskOutput? data) =>
+                    data != null &&
+                    data.Risk.OverallRiskScore > 30 &&
+                    data.Risk.OverallRiskScore <= 70)
 
             // 高リスク (>70): HITL確認へ
             .AddEdge(aggregator, rejectionConfirmHITL,
-                condition: ((ContractInfo, RiskAssessment)? data) =>
-                    data.HasValue && data.Value.Item2.OverallRiskScore > 70);
+                condition: (ContractRiskOutput? data) =>
+                    data != null && data.Risk.OverallRiskScore > 70);
 
         // Loop: 交渉反復フロー
         builder
@@ -459,24 +459,24 @@ public static class Program
 
             // ループバック: 継続 && 改善余地あり → ループバック処理 → 次の交渉へ
             .AddEdge(negotiationContext, negotiationLoopBack,
-                condition: ((ContractInfo, EvaluationResult)? data) =>
-                    data.HasValue && data.Value.Item2.ContinueNegotiation)
+                condition: (ContractEvaluationOutput? data) =>
+                    data != null && data.Evaluation.ContinueNegotiation)
             .AddEdge(negotiationLoopBack, negotiationExecutor)
 
             // 評価結果 → リスク評価形式に変換 (ループ終了時のみ)
             .AddEdge(negotiationContext, negotiationResult,
-                condition: ((ContractInfo, EvaluationResult)? data) =>
-                    data.HasValue && !data.Value.Item2.ContinueNegotiation)
+                condition: (ContractEvaluationOutput? data) =>
+                    data != null && !data.Evaluation.ContinueNegotiation)
 
             // ループ終了: 目標達成 → HITL最終承認
             .AddEdge(negotiationResult, finalApprovalHITL,
-                condition: ((ContractInfo, RiskAssessment)? data) =>
-                    data.HasValue && data.Value.Item2.OverallRiskScore <= 30)
+                condition: (ContractRiskOutput? data) =>
+                    data != null && data.Risk.OverallRiskScore <= 30)
 
             // ループ終了: 目標未達成 → HITLエスカレーション
             .AddEdge(negotiationResult, escalationHITL,
-                condition: ((ContractInfo, RiskAssessment)? data) =>
-                    data.HasValue && data.Value.Item2.OverallRiskScore > 30);
+                condition: (ContractRiskOutput? data) =>
+                    data != null && data.Risk.OverallRiskScore > 30);
 
         // 出力設定: 各終端からの出力を許可
         builder
