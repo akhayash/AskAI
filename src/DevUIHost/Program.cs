@@ -184,52 +184,52 @@ builder.AddWorkflow("advanced-contract-review", (sp, key) =>
     var chatClientFromDI = sp.GetRequiredService<IChatClient>();
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
     var logger = loggerFactory.CreateLogger("AdvancedContractReview");
-    
+
     // ChatProtocol entry point
     var chatForwarder = new ChatForwardingExecutor($"{key}_forwarder");
-    
+
     // ContractInfo変換Executor (ChatMessage → ContractInfo)
     var contractParser = new ChatMessageToContractExecutor($"{key}_parser", logger);
-    
+
     // === AdvancedConditionalWorkflow の全Executor ===
     // Phase 1: 契約分析
     var analysisExecutor = new ContractAnalysisExecutor(logger);
-    
+
     // Phase 2: 並列専門家レビュー
     var legalReviewer = new SpecialistReviewExecutor(chatClientFromDI, "Legal", $"{key}_legal", logger);
     var financeReviewer = new SpecialistReviewExecutor(chatClientFromDI, "Finance", $"{key}_finance", logger);
     var procurementReviewer = new SpecialistReviewExecutor(chatClientFromDI, "Procurement", $"{key}_procurement", logger);
     var aggregator = new ParallelReviewAggregator(logger);
-    
+
     // Phase 3: リスクベース分岐
     var lowRiskApproval = new LowRiskApprovalExecutor(logger);
-    
+
     // Phase 4: 交渉ループ
     var negotiationStateInit = new NegotiationStateInitExecutor(logger);
     var negotiationExecutor = new NegotiationExecutor(chatClientFromDI, logger);
     var negotiationContext = new NegotiationContextExecutor(logger);
     var negotiationLoopBack = new NegotiationLoopBackExecutor(logger);
     var negotiationResult = new NegotiationResultExecutor(logger);
-    
+
     // Phase 5: HITL承認
     var finalApprovalHITL = new HITLApprovalExecutor("final_approval", logger);
     var escalationHITL = new HITLApprovalExecutor("escalation", logger);
     var rejectionConfirmHITL = new HITLApprovalExecutor("rejection_confirm", logger);
-    
+
     // === Workflow構築 ===
     var workflowBuilder = new WorkflowBuilder(chatForwarder);
-    
+
     // ChatMessage → ContractInfo変換
     workflowBuilder.AddEdge(chatForwarder, contractParser);
     workflowBuilder.AddEdge(contractParser, analysisExecutor);
-    
+
     // Fan-Out: 並列レビュー
-    workflowBuilder.AddFanOutEdge(analysisExecutor, 
+    workflowBuilder.AddFanOutEdge(analysisExecutor,
         targets: [legalReviewer, financeReviewer, procurementReviewer]);
-    
+
     // Fan-In: レビュー集約 (新しいシグネチャ)
     workflowBuilder.AddFanInEdge([legalReviewer, financeReviewer, procurementReviewer], aggregator);
-    
+
     // Switch: リスクスコア分岐
     workflowBuilder
         .AddEdge(aggregator, lowRiskApproval,
@@ -237,13 +237,13 @@ builder.AddWorkflow("advanced-contract-review", (sp, key) =>
                 data != null && data.Risk.OverallRiskScore <= 30)
         .AddEdge(aggregator, negotiationStateInit,
             condition: (ContractRiskOutput? data) =>
-                data != null && 
-                data.Risk.OverallRiskScore > 30 && 
+                data != null &&
+                data.Risk.OverallRiskScore > 30 &&
                 data.Risk.OverallRiskScore <= 70)
         .AddEdge(aggregator, rejectionConfirmHITL,
             condition: (ContractRiskOutput? data) =>
                 data != null && data.Risk.OverallRiskScore > 70);
-    
+
     // Loop: 交渉反復
     workflowBuilder
         .AddEdge(negotiationStateInit, negotiationExecutor)
@@ -261,7 +261,7 @@ builder.AddWorkflow("advanced-contract-review", (sp, key) =>
         .AddEdge(negotiationResult, escalationHITL,
             condition: (ContractRiskOutput? data) =>
                 data != null && data.Risk.OverallRiskScore > 30);
-    
+
     // 出力設定
     workflowBuilder
         .WithOutputFrom(lowRiskApproval)
@@ -270,7 +270,7 @@ builder.AddWorkflow("advanced-contract-review", (sp, key) =>
         .WithOutputFrom(rejectionConfirmHITL)
         .WithName(key)
         .WithDescription("契約レビュー→リスク評価→条件分岐→交渉ループ→HITL承認の高度なワークフロー");
-    
+
     return workflowBuilder.Build();
 }).AddAsAIAgent();
 

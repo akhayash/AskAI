@@ -17,10 +17,10 @@ namespace AdvancedConditionalWorkflow.Executors;
 public class ParallelReviewAggregator : Executor<ReviewResult, ContractRiskOutput?>
 {
     private readonly ILogger? _logger;
-    
+
     // インスタンスフィールドでレビューを保持（ワークフロー実行中は同一インスタンスが再利用される）
     private readonly List<ReviewResult> _collectedReviews = new();
-    
+
     // Shared State のスコープ名
     private const string ContractStateScope = "ContractAnalysis";
     private const string ContractStateKey = "current_contract";
@@ -45,21 +45,21 @@ public class ParallelReviewAggregator : Executor<ReviewResult, ContractRiskOutpu
         {
             var waitingMessage = $"⏳ レビュー収集中 ({_collectedReviews.Count}/3): {review.Reviewer} のレビューを受信しました。残り {3 - _collectedReviews.Count} 件を待機中...";
             _logger?.LogInformation("⏳ 残り {RemainingCount} 件のレビューを待機中 (null返却)", 3 - _collectedReviews.Count);
-            
+
             // DevUI に進捗状況を通知 (NetworkStream の早期 dispose を防ぐ)
             await context.YieldOutputAsync(waitingMessage, cancellationToken);
-            
+
             // 3つ揃うまでは null を返す (条件付きエッジで HasValue = false になる)
             return null;
         }
-        
+
         // 3つ揃ったので、ローカル変数にコピーしてクリア
         var reviews = new List<ReviewResult>(_collectedReviews);
         _collectedReviews.Clear();
         _logger?.LogInformation("🧹 レビューリストをクリアしました (次回実行のため)");
 
         _logger?.LogInformation("✓ すべてのレビューが揃いました。統合処理を開始");
-        
+
         // DevUI に統合開始を通知
         await context.YieldOutputAsync("✓ 3つの専門家レビューが揃いました。統合リスク評価を生成中...", cancellationToken);
 
@@ -144,7 +144,7 @@ public class ParallelReviewAggregator : Executor<ReviewResult, ContractRiskOutpu
             Contract = contract,
             Risk = result
         };
-        
+
         // DevUI に最終結果を通知してから return
         await context.YieldOutputAsync($"✅ 統合リスク評価完了: {riskLevel} リスク (スコア: {overallRiskScore}/100)", cancellationToken);
 

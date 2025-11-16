@@ -13,28 +13,28 @@ namespace DevUIHost.Executors;
 public class ChatMessageToContractExecutor : Executor<List<ChatMessage>, ContractInfo>
 {
     private readonly ILogger? _logger;
-    
+
     public ChatMessageToContractExecutor(string id, ILogger? logger) : base(id)
     {
         _logger = logger;
     }
-    
+
     public override ValueTask<ContractInfo> HandleAsync(
-        List<ChatMessage> messages, 
-        IWorkflowContext context, 
+        List<ChatMessage> messages,
+        IWorkflowContext context,
         CancellationToken cancellationToken)
     {
         var userMessage = messages.LastOrDefault(m => m.Role == ChatRole.User)?.Text ?? "";
-        
+
         _logger?.LogInformation("📝 契約情報をパース中: {MessageLength}文字", userMessage.Length);
-        
+
         // JSONパースを試行 (二重エンコードされたJSONも処理)
         if (!string.IsNullOrWhiteSpace(userMessage) && userMessage.TrimStart().StartsWith("{"))
         {
             try
             {
                 string jsonToParse = userMessage;
-                
+
                 // まず {"input": "..."} 形式かチェック
                 using (var doc = JsonDocument.Parse(userMessage))
                 {
@@ -49,16 +49,16 @@ public class ChatMessageToContractExecutor : Executor<List<ChatMessage>, Contrac
                         }
                     }
                 }
-                
+
                 // PascalCase のJSONを手動でパース (JsonPropertyName属性を無視)
                 using (var parsedDoc = JsonDocument.Parse(jsonToParse))
                 {
                     var root = parsedDoc.RootElement;
-                    
+
                     // PascalCase プロパティを読み取る
                     var contract = new ContractInfo
                     {
-                        SupplierName = root.TryGetProperty("SupplierName", out var sn) ? sn.GetString() ?? "" : 
+                        SupplierName = root.TryGetProperty("SupplierName", out var sn) ? sn.GetString() ?? "" :
                                        root.TryGetProperty("supplier_name", out var sn2) ? sn2.GetString() ?? "" : "",
                         ContractValue = root.TryGetProperty("ContractValue", out var cv) ? cv.GetDecimal() :
                                        root.TryGetProperty("contract_value", out var cv2) ? cv2.GetDecimal() : 0,
@@ -77,7 +77,7 @@ public class ChatMessageToContractExecutor : Executor<List<ChatMessage>, Contrac
                         Description = root.TryGetProperty("Description", out var desc) ? desc.GetString() :
                                      root.TryGetProperty("description", out var desc2) ? desc2.GetString() : null
                     };
-                    
+
                     if (!string.IsNullOrEmpty(contract.SupplierName))
                     {
                         _logger?.LogInformation("✅ JSON形式の契約情報をパースしました: {Supplier}", contract.SupplierName);
@@ -96,7 +96,7 @@ public class ChatMessageToContractExecutor : Executor<List<ChatMessage>, Contrac
                 // デフォルト契約にフォールバック
             }
         }
-        
+
         // JSON形式でない場合はデフォルト契約を作成
         var defaultContract = new ContractInfo
         {
@@ -110,7 +110,7 @@ public class ChatMessageToContractExecutor : Executor<List<ChatMessage>, Contrac
             HasAutoRenewal = false,
             Description = userMessage
         };
-        
+
         _logger?.LogInformation("✅ デフォルト契約情報を作成しました (テキスト入力)");
         return new ValueTask<ContractInfo>(defaultContract);
     }
