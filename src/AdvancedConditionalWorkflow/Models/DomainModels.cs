@@ -189,3 +189,75 @@ public record FinalDecision
     [JsonPropertyName("evaluation_history")]
     public List<EvaluationResult>? EvaluationHistory { get; init; }
 }
+
+/// <summary>
+/// 契約とリスク評価のペアを表す出力モデル
+/// </summary>
+public record ContractRiskOutput
+{
+    [JsonPropertyName("contract")]
+    public required ContractInfo Contract { get; init; }
+
+    [JsonPropertyName("risk")]
+    public required RiskAssessment Risk { get; init; }
+}
+
+/// <summary>
+/// 交渉ステート(契約、リスク、イテレーション)を表す出力モデル
+/// </summary>
+public record NegotiationStateOutput
+{
+    [JsonPropertyName("contract")]
+    public required ContractInfo Contract { get; init; }
+
+    [JsonPropertyName("risk")]
+    public required RiskAssessment Risk { get; init; }
+
+    [JsonPropertyName("iteration")]
+    public required int Iteration { get; init; }
+}
+
+/// <summary>
+/// 交渉実行結果(契約、リスク、提案、イテレーション)を表す出力モデル
+/// </summary>
+public record NegotiationExecutionOutput
+{
+    [JsonPropertyName("contract")]
+    public required ContractInfo Contract { get; init; }
+
+    [JsonPropertyName("risk")]
+    public required RiskAssessment Risk { get; init; }
+
+    [JsonPropertyName("proposal")]
+    public required NegotiationProposal Proposal { get; init; }
+
+    [JsonPropertyName("iteration")]
+    public required int Iteration { get; init; }
+}
+
+/// <summary>
+/// 契約と評価結果のペアを表す出力モデル
+/// </summary>
+public record ContractEvaluationOutput
+{
+    [JsonPropertyName("contract")]
+    public required ContractInfo Contract { get; init; }
+
+    [JsonPropertyName("evaluation")]
+    public required EvaluationResult Evaluation { get; init; }
+}
+
+/// <summary>
+/// 承認処理結果(契約、リスク、承認応答)を表す出力モデル
+/// </summary>
+public record ApprovalOutput
+{
+    [JsonPropertyName("contract")]
+    public required ContractInfo Contract { get; init; }
+
+    [JsonPropertyName("risk")]
+    public required RiskAssessment Risk { get; init; }
+
+    [JsonPropertyName("approval")]
+    public ApprovalResponse? Approval { get; init; }
+}

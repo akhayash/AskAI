@@ -12,7 +12,7 @@ namespace AdvancedConditionalWorkflow.Executors;
 /// 交渉ループに入る前にShared Stateへ初期状態を保存する Executor
 /// 元の契約、元のリスク、交渉履歴、評価履歴を初期化
 /// </summary>
-public class NegotiationStateInitExecutor : Executor<(ContractInfo Contract, RiskAssessment Risk), (ContractInfo Contract, RiskAssessment Risk, int Iteration)>
+public class NegotiationStateInitExecutor : Executor<ContractRiskOutput, NegotiationStateOutput>
 {
     private readonly ILogger? _logger;
 
@@ -22,22 +22,23 @@ public class NegotiationStateInitExecutor : Executor<(ContractInfo Contract, Ris
         _logger = logger;
     }
 
-    public override async ValueTask<(ContractInfo Contract, RiskAssessment Risk, int Iteration)> HandleAsync(
-        (ContractInfo Contract, RiskAssessment Risk) input,
+    public override async ValueTask<NegotiationStateOutput> HandleAsync(
+        ContractRiskOutput input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
+        var contract = input.Contract;
+        var risk = input.Risk;
+
         using var activity = TelemetryHelper.StartActivity(
             Program.ActivitySource,
             "NegotiationStateInit",
             new Dictionary<string, object>
             {
-                ["supplier"] = input.Contract.SupplierName,
-                ["initial_risk_score"] = input.Risk.OverallRiskScore,
-                ["contract_value"] = input.Contract.ContractValue
+                ["supplier"] = contract.SupplierName,
+                ["initial_risk_score"] = risk.OverallRiskScore,
+                ["contract_value"] = contract.ContractValue
             });
-
-        var (contract, risk) = input;
 
         _logger?.LogInformation("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         _logger?.LogInformation("🔄 交渉ループ開始 - Shared State に初期状態を保存");
@@ -90,6 +91,11 @@ public class NegotiationStateInitExecutor : Executor<(ContractInfo Contract, Ris
         }
 
         // 初回反復として開始
-        return (contract, risk, 1);
+        return new NegotiationStateOutput
+        {
+            Contract = contract,
+            Risk = risk,
+            Iteration = 1
+        };
     }
 }

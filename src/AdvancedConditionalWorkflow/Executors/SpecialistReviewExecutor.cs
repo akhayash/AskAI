@@ -51,9 +51,10 @@ public class SpecialistReviewExecutor : Executor<ContractInfo, ReviewResult>
             _ => throw new ArgumentException($"Unknown specialist type: {specialistType}")
         };
 
+        // Structured Output を使用して型安全な JSON 出力を実現
         _agent = new ChatClientAgent(
             chatClient,
-            new ChatClientAgentOptions(instructions, agentId, agentName)
+            new ChatClientAgentOptions(instructions)
             {
                 ChatOptions = new()
                 {
@@ -93,7 +94,7 @@ public class SpecialistReviewExecutor : Executor<ContractInfo, ReviewResult>
 
         var messages = new[] { new ChatMessage(ChatRole.User, prompt) };
 
-        // Azure OpenAI 呼び出しと Structured Output による JSON パース
+        // Azure OpenAI 呼び出しと JSON パース
         try
         {
             var response = await _agent.RunAsync(messages, cancellationToken: cancellationToken);
@@ -120,12 +121,15 @@ public class SpecialistReviewExecutor : Executor<ContractInfo, ReviewResult>
             _logger?.LogInformation("✓ {SpecialistName} レビュー完了 (リスクスコア: {RiskScore})",
                 _specialistName, result.RiskScore);
 
-            // エージェント発話をCommunicationに送信
-            await Program.Communication!.SendAgentUtteranceAsync(
-                $"{_specialistName} Agent",
-                result.Opinion,
-                "Phase 2: Specialist Review",
-                result.RiskScore);
+            // エージェント発話をCommunicationに送信 (DevUIHost環境では無効)
+            if (Program.Communication != null)
+            {
+                await Program.Communication.SendAgentUtteranceAsync(
+                    $"{_specialistName} Agent",
+                    result.Opinion,
+                    "Phase 2: Specialist Review",
+                    result.RiskScore);
+            }
 
             // レビュー詳細をログ出力
             _logger?.LogInformation("  所見: {Opinion}", result.Opinion);

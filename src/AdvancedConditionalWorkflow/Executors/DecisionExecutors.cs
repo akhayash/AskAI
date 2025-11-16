@@ -10,18 +10,19 @@ namespace AdvancedConditionalWorkflow.Executors;
 /// 低リスク契約の自動承認を行う Executor
 /// </summary>
 public class LowRiskApprovalExecutor(ILogger? logger = null, string id = "low_risk_approval")
-    : Executor<(ContractInfo Contract, RiskAssessment Risk), FinalDecision>(id)
+    : Executor<ContractRiskOutput, FinalDecision>(id)
 {
     private readonly ILogger? _logger = logger;
 
     public override async ValueTask<FinalDecision> HandleAsync(
-        (ContractInfo Contract, RiskAssessment Risk) input,
+        ContractRiskOutput input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
         await Task.CompletedTask;
 
-        var (contract, risk) = input;
+        var contract = input.Contract;
+        var risk = input.Risk;
 
         _logger?.LogInformation("✅ 低リスク契約を自動承認");
         _logger?.LogInformation("  契約: {SupplierName}", contract.SupplierName);
@@ -52,18 +53,19 @@ public class LowRiskApprovalExecutor(ILogger? logger = null, string id = "low_ri
 /// 高リスク契約の自動却下を行う Executor
 /// </summary>
 public class HighRiskRejectionExecutor(ILogger? logger = null, string id = "high_risk_rejection")
-    : Executor<(ContractInfo Contract, RiskAssessment Risk), FinalDecision>(id)
+    : Executor<ContractRiskOutput, FinalDecision>(id)
 {
     private readonly ILogger? _logger = logger;
 
     public override async ValueTask<FinalDecision> HandleAsync(
-        (ContractInfo Contract, RiskAssessment Risk) input,
+        ContractRiskOutput input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
         await Task.CompletedTask;
 
-        var (contract, risk) = input;
+        var contract = input.Contract;
+        var risk = input.Risk;
 
         _logger?.LogInformation("❌ 高リスク契約を自動却下");
         _logger?.LogInformation("  契約: {SupplierName}", contract.SupplierName);
@@ -107,18 +109,20 @@ public class HighRiskRejectionExecutor(ILogger? logger = null, string id = "high
 /// 最終承認結果を確定する Executor
 /// </summary>
 public class FinalizeDecisionExecutor(ILogger? logger = null, string id = "finalize_decision")
-    : Executor<(ContractInfo Contract, RiskAssessment Risk, ApprovalResponse? Approval), FinalDecision>(id)
+    : Executor<ApprovalOutput, FinalDecision>(id)
 {
     private readonly ILogger? _logger = logger;
 
     public override async ValueTask<FinalDecision> HandleAsync(
-        (ContractInfo Contract, RiskAssessment Risk, ApprovalResponse? Approval) input,
+        ApprovalOutput input,
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
         await Task.CompletedTask;
 
-        var (contract, risk, approval) = input;
+        var contract = input.Contract;
+        var risk = input.Risk;
+        var approval = input.Approval;
 
         if (approval == null || !approval.Approved)
         {
