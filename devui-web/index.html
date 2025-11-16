@@ -469,6 +469,15 @@
             }
         }
 
+        // Escape HTML meta-characters to prevent XSS
+        function escapeHTML(str) {
+            return str.replace(/&/g, "&amp;")
+                      .replace(/</g, "&lt;")
+                      .replace(/>/g, "&gt;")
+                      .replace(/"/g, "&quot;")
+                      .replace(/'/g, "&#39;");
+        }
+
         function addMessage(type, content) {
             const messagesDiv = document.getElementById('messages');
             const messageDiv = document.createElement('div');
@@ -481,7 +490,7 @@
             
             messageDiv.innerHTML = `
                 <div class="message-avatar">${avatar}</div>
-                <div class="message-content">${content.replace(/\n/g, '<br>')}</div>
+                <div class="message-content">${escapeHTML(content).replace(/\n/g, '<br>')}</div>
             `;
             
             messagesDiv.appendChild(messageDiv);
