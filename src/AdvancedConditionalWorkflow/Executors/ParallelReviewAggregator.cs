@@ -18,12 +18,11 @@ public class ParallelReviewAggregator : Executor<ReviewResult, ContractRiskOutpu
 {
     private readonly ILogger? _logger;
 
-    // インスタンスフィールドでレビューを保持（ワークフロー実行中は同一インスタンスが再利用される）
-    private readonly List<ReviewResult> _collectedReviews = new();
-
     // Shared State のスコープ名
     private const string ContractStateScope = "ContractAnalysis";
     private const string ContractStateKey = "current_contract";
+    private const string ReviewStateScope = "ReviewCollection";
+    private const string ReviewStateKey = "collected_reviews";
 
     public ParallelReviewAggregator(ILogger? logger = null, string id = "review_aggregator")
         : base(id)
@@ -36,15 +35,22 @@ public class ParallelReviewAggregator : Executor<ReviewResult, ContractRiskOutpu
         IWorkflowContext context,
         CancellationToken cancellationToken)
     {
-        // 新しいレビューをインスタンスフィールドに追加
-        _collectedReviews.Add(review);
-        _logger?.LogInformation("📊 レビュー受信: {Reviewer} ({CurrentCount}/3)", review.Reviewer, _collectedReviews.Count);
+        // Shared State からこれまでのレビューを取得
+        var collectedReviews = await context.ReadStateAsync<List<ReviewResult>>(ReviewStateKey, scopeName: ReviewStateScope, cancellationToken)
+            ?? new List<ReviewResult>();
+
+        // 新しいレビューを追加
+        collectedReviews.Add(review);
+        _logger?.LogInformation("📊 レビュー受信: {Reviewer} ({CurrentCount}/3)", review.Reviewer, collectedReviews.Count);
+
+        // Shared State に保存（QueueStateUpdateAsync を使用）
+        await context.QueueStateUpdateAsync(ReviewStateKey, collectedReviews, scopeName: ReviewStateScope, cancellationToken: cancellationToken);
 
         // Fan-In: 3つすべてのレビューが揃うまで待機
-        if (_collectedReviews.Count < 3)
+        if (collectedReviews.Count < 3)
         {
-            var waitingMessage = $"⏳ レビュー収集中 ({_collectedReviews.Count}/3): {review.Reviewer} のレビューを受信しました。残り {3 - _collectedReviews.Count} 件を待機中...";
-            _logger?.LogInformation("⏳ 残り {RemainingCount} 件のレビューを待機中 (null返却)", 3 - _collectedReviews.Count);
+            var waitingMessage = $"⏳ レビュー収集中 ({collectedReviews.Count}/3): {review.Reviewer} のレビューを受信しました。残り {3 - collectedReviews.Count} 件を待機中...";
+            _logger?.LogInformation("⏳ 残り {RemainingCount} 件のレビューを待機中 (null返却)", 3 - collectedReviews.Count);
 
             // DevUI に進捗状況を通知 (NetworkStream の早期 dispose を防ぐ)
             await context.YieldOutputAsync(waitingMessage, cancellationToken);
@@ -53,9 +59,9 @@ public class ParallelReviewAggregator : Executor<ReviewResult, ContractRiskOutpu
             return null;
         }
 
-        // 3つ揃ったので、ローカル変数にコピーしてクリア
-        var reviews = new List<ReviewResult>(_collectedReviews);
-        _collectedReviews.Clear();
+        // 3つ揃ったので、ローカル変数にコピーして State をクリア
+        var reviews = new List<ReviewResult>(collectedReviews);
+        await context.QueueStateUpdateAsync(ReviewStateKey, new List<ReviewResult>(), scopeName: ReviewStateScope, cancellationToken: cancellationToken);
         _logger?.LogInformation("🧹 レビューリストをクリアしました (次回実行のため)");
 
         _logger?.LogInformation("✓ すべてのレビューが揃いました。統合処理を開始");
