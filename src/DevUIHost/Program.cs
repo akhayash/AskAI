@@ -301,9 +301,19 @@ app.UseCors();
 var devuiWebPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "devui-web");
 if (Directory.Exists(devuiWebPath))
 {
+    var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(devuiWebPath);
+    
+    // Enable default files (index.html) for directory requests
+    app.UseDefaultFiles(new DefaultFilesOptions
+    {
+        FileProvider = fileProvider,
+        RequestPath = "/ui"
+    });
+    
+    // Serve static files
     app.UseStaticFiles(new StaticFileOptions
     {
-        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(devuiWebPath),
+        FileProvider = fileProvider,
         RequestPath = "/ui"
     });
 }
