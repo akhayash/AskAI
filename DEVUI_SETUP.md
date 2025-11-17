@@ -2,6 +2,10 @@
 
 このガイドでは、AskAI プロジェクトで DevUI を使用する方法を説明します。
 
+## 🆕 新機能: Human In The Loop (HITL) サポート
+
+DevUIHost は、ワークフロー実行中の人間による承認機能（HITL）をサポートしています。詳細は [DevUIHost HITL Guide](src/DevUIHost/HITL_GUIDE.md) を参照してください。
+
 ## 前提条件
 
 - .NET 9 SDK
@@ -79,6 +83,29 @@ http://localhost:5000/ui/
 - ✅ チャット形式での対話
 - ✅ 会話履歴の保持
 - ✅ モダンな UI デザイン
+
+#### オプション 3: HITL Approval UI 🆕
+
+ブラウザで以下の URL を開く：
+
+```
+http://localhost:5000/ui/hitl-approval.html
+```
+
+**HITL Approval UI の機能：**
+
+- ✅ ワークフロー承認待ちリクエストの表示
+- ✅ リアルタイムポーリング（3秒間隔）
+- ✅ 契約情報とリスク評価の確認
+- ✅ 承認/却下ボタン
+- ✅ コメント機能
+
+**使用方法：**
+1. DevUI でワークフロー `advanced-contract-review` を実行
+2. HITL 承認が必要になると、ワークフローが一時停止
+3. HITL Approval UI で承認待ちリクエストを確認
+4. 「承認」または「却下」をクリック
+5. ワークフローが自動的に再開
 
 ### 5. エージェント一覧の確認（API）
 
