@@ -18,6 +18,7 @@ using OpenTelemetry.Trace;
 using AdvancedConditionalWorkflow.Executors;
 using AdvancedConditionalWorkflow.Models;
 using DevUIHost.Executors;
+using DevUIHost.Communication;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -85,6 +86,14 @@ var chatClient = new AzureOpenAIClient(
 
 // Register the chat client for DI
 builder.Services.AddChatClient(chatClient);
+
+// Register DevUIWorkflowCommunication as singleton for HITL support
+builder.Services.AddSingleton<DevUIWorkflowCommunication>(sp =>
+{
+    var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
+    var logger = loggerFactory.CreateLogger<DevUIWorkflowCommunication>();
+    return new DevUIWorkflowCommunication(logger);
+});
 
 // Register specialist agents using the hosting package
 builder.AddAIAgent("contract", """
@@ -184,6 +193,11 @@ builder.AddWorkflow("advanced-contract-review", (sp, key) =>
     var chatClientFromDI = sp.GetRequiredService<IChatClient>();
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
     var logger = loggerFactory.CreateLogger("AdvancedContractReview");
+    
+    // ⚠️ 重要: HITL承認をサポートするためにCommunicationを設定
+    var communication = sp.GetRequiredService<DevUIWorkflowCommunication>();
+    global::AdvancedConditionalWorkflow.Program.Communication = communication;
+    logger.LogInformation("✓ DevUIWorkflowCommunication初期化完了 (HITL承認サポート有効)");
 
     // ChatProtocol entry point
     var chatForwarder = new ChatForwardingExecutor($"{key}_forwarder");
@@ -339,6 +353,47 @@ if (builder.Environment.IsDevelopment())
     app.MapDevUI();
 }
 
+// HITL承認エンドポイント
+app.MapGet("/hitl/pending", (DevUIWorkflowCommunication communication) =>
+{
+    var pending = communication.GetPendingApprovals().Select(req => new
+    {
+        req.RequestId,
+        req.ApprovalType,
+        req.PromptMessage,
+        req.ContractInfo,
+        req.RiskAssessment,
+        req.CreatedAt
+    });
+    
+    return Results.Json(new { requests = pending });
+})
+.WithName("GetPendingHITLApprovals")
+.WithDescription("承認待ちのHITLリクエストを取得")
+.WithTags("HITL");
+
+app.MapPost("/hitl/approve", (
+    DevUIWorkflowCommunication communication,
+    HITLApprovalResponse response) =>
+{
+    var success = communication.ProcessApprovalResponse(
+        response.RequestId,
+        response.Approved,
+        response.Comment);
+    
+    if (success)
+    {
+        return Results.Ok(new { message = "承認応答を処理しました", success = true });
+    }
+    else
+    {
+        return Results.NotFound(new { message = "承認リクエストが見つかりません", success = false });
+    }
+})
+.WithName("ApproveHITL")
+.WithDescription("HITL承認リクエストに応答")
+.WithTags("HITL");
+
 // Root endpoint with agent list
 app.MapGet("/", () => Results.Json(new
 {
@@ -371,12 +426,14 @@ Console.WriteLine($"✓ Agents/Workflows available: 11");
 Console.WriteLine($"✓ Agent List: GET /");
 Console.WriteLine($"✓ AGUI Endpoints: /agents/*");
 Console.WriteLine($"✓ OpenAI API: /v1/responses");
+Console.WriteLine($"✓ HITL Approvals: GET /hitl/pending, POST /hitl/approve");
 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 Console.WriteLine();
 Console.WriteLine("💡 使用方法:");
 Console.WriteLine($"   1. Microsoft DevUI: {serverUrl}/devui");
 Console.WriteLine($"   2. Custom Web UI:   {serverUrl}/ui/");
 Console.WriteLine($"   3. AGUI API:        {serverUrl}/agents/contract");
+Console.WriteLine($"   4. HITL Approval:   GET {serverUrl}/hitl/pending");
 Console.WriteLine("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
 
 await app.RunAsync();
@@ -489,4 +546,14 @@ public class SimpleSummarizerExecutor : Executor<string, string>
             throw;
         }
     }
+}
+
+/// <summary>
+/// HITL承認応答のリクエストボディ
+/// </summary>
+public record HITLApprovalResponse
+{
+    public required string RequestId { get; init; }
+    public required bool Approved { get; init; }
+    public string? Comment { get; init; }
 }
