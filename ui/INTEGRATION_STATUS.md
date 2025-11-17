@@ -28,18 +28,18 @@
 
 **実装パターン**: Microsoft Agent Framework 公式パターンを使用
 
-- `@copilotkit/runtime` - CopilotRuntime, ExperimentalEmptyAdapter
+- `@copilotkit/runtime` - CopilotRuntime, OpenAIAdapter
 - `@ag-ui/client` - HttpAgent for AG-UI protocol communication
 - `copilotRuntimeNextJSAppRouterEndpoint` - Next.js App Router 統合
 
 **コード構造**:
 
 ```typescript
-// 1. OpenAIAdapter を使用（EmptyAdapterはエージェントロックモード専用）
+// 1. OpenAIAdapter を使用（CopilotKitの要件、実際のLLM呼び出しはAG-UI側）
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY || "dummy-key",
+  apiKey: "dummy-key-not-used",
 });
-const serviceAdapter = new OpenAIAdapter({ openai });
+const serviceAdapter = new OpenAIAdapter({ openai, model: "gpt-4o" });
 
 // 2. CopilotRuntime + HttpAgent でAG-UIに接続
 const runtime = new CopilotRuntime({
@@ -58,11 +58,11 @@ const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
 return handleRequest(req);
 ```
 
-**重要**: `ExperimentalEmptyAdapter`はエージェントロックモード専用です。通常のチャット UI には`OpenAIAdapter`などの LLM アダプターが必要です。
+**重要**: `OpenAIAdapter`はCopilotKitの要件として必要ですが、実際のLLM呼び出しはAG-UIエージェント側で行われます。
 
 **参考**:
 
-- https://github.com/CopilotKit/CopilotKit/blob/main/docs/content/docs/microsoft-agent-framework/quickstart.mdx#L214-L237
+- https://docs.copilotkit.ai/microsoft-agent-framework/quickstart
 
 ### 2. フロントエンドページ (`/app/copilotkit/page.tsx`)
 
@@ -82,7 +82,8 @@ return handleRequest(req);
 - `sourcing` - Sourcing Agent
 - `spend` - Spend Agent
 - `negotiation` - Negotiation Agent
-- その他複数の専門エージェント
+- `knowledge` - Knowledge Agent
+- `supplier` - Supplier Agent
 
 ### 3. DevUIHost 側の対応
 
@@ -212,5 +213,5 @@ app.UseCors(policy => policy
 
 ---
 
-**最終更新**: 2025-01-16
-**ステータス**: 実装完了、テスト待ち
+**最終更新**: 2025-01-18
+**ステータス**: 実装完了

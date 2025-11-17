@@ -12,14 +12,14 @@ import OpenAI from "openai";
  *
  * このルートは、CopilotKitとDevUIHost (AG-UI) を接続します。
  *
- * 注意: serviceAdapterは必須ですが、実際のLLM呼び出しはAG-UIエージェント側で行われます。
- * ダミーのOpenAI設定でも、エージェント経由では問題なく動作します。
+ * 注意: serviceAdapterは必須です。実際のLLM呼び出しはAG-UIエージェント側で行われるため、
+ * 有効なAPIキーがなくても動作しますが、CopilotKitの要件として設定が必要です。
  *
  * 参考: https://docs.copilotkit.ai/microsoft-agent-framework/quickstart
  */
 
-// DevUIHostのベースURL
 const DEVUI_HOST_URL = process.env.DEVUI_HOST_URL || "http://localhost:5000";
+const DEFAULT_AGENT_ID = "contract";
 
 /**
  * POST /api/copilotkit
@@ -29,41 +29,28 @@ const DEVUI_HOST_URL = process.env.DEVUI_HOST_URL || "http://localhost:5000";
  */
 export async function POST(req: NextRequest) {
   try {
-    // エージェントIDを取得 (デフォルト: "contract")
     const searchParams = req.nextUrl.searchParams;
-    const agentId = searchParams.get("agent") || "contract";
-
-    // AG-UIエンドポイントURL
+    const agentId = searchParams.get("agent") || DEFAULT_AGENT_ID;
     const aguiEndpoint = `${DEVUI_HOST_URL}/agents/${agentId}`;
 
-    console.log(
-      `[CopilotKit API] ═══════════════════════════════════════════════`
-    );
-    console.log(`[CopilotKit API] Agent ID: ${agentId}`);
-    console.log(`[CopilotKit API] AG-UI Endpoint: ${aguiEndpoint}`);
-    console.log(`[CopilotKit API] DevUI Host URL: ${DEVUI_HOST_URL}`);
-    console.log(
-      `[CopilotKit API] ═══════════════════════════════════════════════`
-    );
+    console.log(`[CopilotKit API] Connecting to agent: ${agentId} at ${aguiEndpoint}`);
 
-    // ダミーのOpenAI設定（エージェント経由のため実際には使用されない）
+    // OpenAI adapter (required by CopilotKit, but actual LLM calls handled by AG-UI)
     const openai = new OpenAI({
       apiKey: "dummy-key-not-used",
     });
 
     const serviceAdapter = new OpenAIAdapter({
       openai,
-      model: "gpt-4o", // ダミーモデル名
+      model: "gpt-4o",
     });
 
-    // CopilotRuntime を作成し、HttpAgent を使用してAG-UIに接続
     const runtime = new CopilotRuntime({
       agents: {
         [agentId]: new HttpAgent({ url: aguiEndpoint }),
       },
     });
 
-    // CopilotKitのNext.js App Router統合を使用してリクエストを処理
     const { handleRequest } = copilotRuntimeNextJSAppRouterEndpoint({
       runtime,
       serviceAdapter,
@@ -72,15 +59,12 @@ export async function POST(req: NextRequest) {
 
     return handleRequest(req);
   } catch (error) {
-    console.error("[CopilotKit API] Error:", error);
-    console.error(
-      "[CopilotKit API] Error details:",
-      error instanceof Error ? error.message : String(error)
-    );
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`[CopilotKit API] Error: ${errorMessage}`, error);
     return new Response(
       JSON.stringify({
         error: "Failed to connect to AG-UI endpoint",
-        details: error instanceof Error ? error.message : String(error),
+        details: errorMessage,
       }),
       {
         status: 500,

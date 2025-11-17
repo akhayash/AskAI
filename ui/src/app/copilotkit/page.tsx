@@ -8,10 +8,10 @@ import { useState } from "react";
 /**
  * CopilotKit統合ページ
  *
- * DevUIHostのAG-UIエンドポイントに直接接続します。
- * CopilotKitはAG-UI準拠なので、プロキシ不要で動作します。
+ * DevUIHostのAG-UIエンドポイントに接続します。
+ * API Route (/api/copilotkit) を経由してHttpAgentでAG-UIプロトコル通信を行います。
  *
- * 参考: https://zenn.dev/suwash/articles/agui_copilotkit_20250523
+ * 参考: https://docs.copilotkit.ai/microsoft-agent-framework/quickstart
  */
 export default function CopilotKitPage() {
   // 利用可能なエージェント (DevUIHostで定義されているID)
@@ -22,10 +22,6 @@ export default function CopilotKitPage() {
     { id: "sourcing", name: "Sourcing Agent" },
     { id: "knowledge", name: "Knowledge Agent" },
     { id: "supplier", name: "Supplier Agent" },
-    { id: "legal", name: "Legal Agent" },
-    { id: "finance", name: "Finance Agent" },
-    { id: "procurement", name: "Procurement Agent" },
-    { id: "assistant", name: "Assistant Agent" },
   ];
   const [selectedAgent, setSelectedAgent] = useState(agents[0]);
 
@@ -37,7 +33,7 @@ export default function CopilotKitPage() {
           CopilotKit + AG-UI Demo
         </h1>
         <p className="text-sm text-slate-600 mb-3">
-          DevUIHost に CopilotKit で接続 (OpenAI API経由)
+          DevUIHost に CopilotKit で接続 (AG-UIプロトコル経由)
         </p>
 
         {/* エージェント選択 */}
@@ -57,16 +53,13 @@ export default function CopilotKitPage() {
               </option>
             ))}
           </select>
-          <span className="text-xs text-slate-500">
-            Using OpenAI-compatible endpoint: /v1/responses
-          </span>
         </div>
       </div>
 
       {/* CopilotKit チャット */}
       <div className="flex-1 overflow-hidden">
         <CopilotKit
-          key={selectedAgent.id} // エージェント変更時に完全に再マウント
+          key={selectedAgent.id}
           runtimeUrl={`/api/copilotkit?agent=${selectedAgent.id}`}
           agent={selectedAgent.id}
         >
