@@ -445,18 +445,54 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 
-                const data = await response.json();
+                // Handle SSE (Server-Sent Events) response
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let assistantMessage = '';
+                let buffer = '';
                 
-                // Remove loading
+                // Remove loading before streaming starts
                 removeLoading(loadingId);
+                const assistantMsgId = 'assistant-' + Date.now();
+                addStreamingMessage(assistantMsgId, '');
                 
-                // Add assistant response
-                if (data.choices && data.choices[0] && data.choices[0].message) {
-                    const assistantMessage = data.choices[0].message.content;
-                    addMessage('assistant', assistantMessage);
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || ''; // Keep incomplete line in buffer
+                    
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            const data = line.slice(6); // Remove "data: " prefix
+                            
+                            if (data === '[DONE]') {
+                                continue;
+                            }
+                            
+                            try {
+                                const parsed = JSON.parse(data);
+                                
+                                // Handle TEXT_MESSAGE_CONTENT type
+                                if (parsed.type === 'TEXT_MESSAGE_CONTENT' && parsed.delta) {
+                                    assistantMessage += parsed.delta;
+                                    updateStreamingMessage(assistantMsgId, assistantMessage);
+                                }
+                            } catch (e) {
+                                // Ignore JSON parse errors for non-JSON lines
+                                console.debug('Non-JSON SSE data:', data);
+                            }
+                        }
+                    }
+                }
+                
+                // Finalize message
+                if (assistantMessage) {
                     conversationHistory.push({ role: 'assistant', content: assistantMessage });
                 } else {
-                    addMessage('system', 'レスポンスの形式が不正です。');
+                    addMessage('system', 'レスポンスが空です。');
                 }
             } catch (error) {
                 console.error('Error sending message:', error);
@@ -476,6 +512,33 @@
                       .replace(/>/g, "&gt;")
                       .replace(/"/g, "&quot;")
                       .replace(/'/g, "&#39;");
+        }
+
+        // Add a streaming message placeholder
+        function addStreamingMessage(id, content) {
+            const messagesDiv = document.getElementById('messages');
+            const messageDiv = document.createElement('div');
+            messageDiv.id = id;
+            messageDiv.className = 'message assistant';
+            messageDiv.innerHTML = `
+                <div class="message-avatar">🤖</div>
+                <div class="message-content">${escapeHTML(content).replace(/\n/g, '<br>')}</div>
+            `;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        }
+
+        // Update streaming message content
+        function updateStreamingMessage(id, content) {
+            const messageDiv = document.getElementById(id);
+            if (messageDiv) {
+                const contentDiv = messageDiv.querySelector('.message-content');
+                if (contentDiv) {
+                    contentDiv.innerHTML = escapeHTML(content).replace(/\n/g, '<br>');
+                }
+                const messagesDiv = document.getElementById('messages');
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
         }
 
         function addMessage(type, content) {

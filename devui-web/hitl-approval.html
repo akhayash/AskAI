@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HITL Approval - Human In The Loop</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: #718096;
+            font-size: 14px;
+        }
+
+        .status {
+            background: white;
+            border-radius: 12px;
+            padding: 16px 24px;
+            margin-bottom: 24px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        .status-indicator.active {
+            background: #48bb78;
+        }
+
+        .status-indicator.waiting {
+            background: #ed8936;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .approval-list {
+            display: grid;
+            gap: 16px;
+        }
+
+        .approval-card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .approval-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        .approval-type {
+            display: inline-block;
+            padding: 6px 12px;
+            background: #edf2f7;
+            color: #2d3748;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .approval-type.final_approval {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .approval-type.escalation {
+            background: #fed7d7;
+            color: #742a2a;
+        }
+
+        .approval-type.rejection_confirm {
+            background: #feebc8;
+            color: #7c2d12;
+        }
+
+        .timestamp {
+            font-size: 12px;
+            color: #a0aec0;
+        }
+
+        .prompt-message {
+            background: #f7fafc;
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            white-space: pre-wrap;
+            font-size: 14px;
+            line-height: 1.6;
+            color: #2d3748;
+        }
+
+        .contract-info, .risk-info {
+            margin-bottom: 16px;
+        }
+
+        .info-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 8px;
+        }
+
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-label {
+            font-size: 12px;
+            color: #718096;
+        }
+
+        .info-value {
+            font-size: 14px;
+            color: #2d3748;
+            font-weight: 500;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-approve {
+            background: #48bb78;
+            color: white;
+        }
+
+        .btn-approve:hover {
+            background: #38a169;
+        }
+
+        .btn-reject {
+            background: #f56565;
+            color: white;
+        }
+
+        .btn-reject:hover {
+            background: #e53e3e;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .empty-state {
+            background: white;
+            border-radius: 12px;
+            padding: 48px;
+            text-align: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .empty-state h2 {
+            font-size: 24px;
+            color: #2d3748;
+            margin-bottom: 8px;
+        }
+
+        .empty-state p {
+            color: #718096;
+            font-size: 14px;
+        }
+
+        .comment-section {
+            margin-top: 12px;
+        }
+
+        .comment-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            resize: vertical;
+            min-height: 60px;
+        }
+
+        .comment-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>👤 HITL Approval Dashboard</h1>
+            <p>Human In The Loop - ワークフロー承認管理</p>
+        </div>
+
+        <div class="status">
+            <div class="status-indicator active" id="statusIndicator"></div>
+            <span id="statusText">承認待ちの案件をチェック中...</span>
+        </div>
+
+        <div class="approval-list" id="approvalList">
+            <!-- 承認カードがここに動的に追加されます -->
+        </div>
+
+        <div class="empty-state" id="emptyState" style="display: none;">
+            <h2>✅ 全て処理済み</h2>
+            <p>現在、承認待ちの案件はありません</p>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let pollInterval;
+
+        async function fetchPendingApprovals() {
+            try {
+                const response = await fetch(`${API_BASE}/hitl/pending`);
+                const data = await response.json();
+                
+                const approvals = data.requests || [];
+                updateUI(approvals);
+            } catch (error) {
+                console.error('承認リスト取得エラー:', error);
+                updateStatus('error', 'エラー: 承認リストの取得に失敗しました');
+            }
+        }
+
+        function updateUI(approvals) {
+            const listEl = document.getElementById('approvalList');
+            const emptyStateEl = document.getElementById('emptyState');
+            
+            if (approvals.length === 0) {
+                listEl.style.display = 'none';
+                emptyStateEl.style.display = 'block';
+                updateStatus('active', '承認待ちの案件はありません');
+                return;
+            }
+
+            listEl.style.display = 'grid';
+            emptyStateEl.style.display = 'none';
+            updateStatus('waiting', `${approvals.length}件の承認待ち案件があります`);
+
+            listEl.innerHTML = approvals.map(approval => createApprovalCard(approval)).join('');
+        }
+
+        function createApprovalCard(approval) {
+            const createdAt = new Date(approval.createdAt);
+            const timeAgo = getTimeAgo(createdAt);
+            
+            const contractInfo = approval.contractInfo || {};
+            const riskAssessment = approval.riskAssessment || {};
+
+            const approvalTypeLabel = {
+                'final_approval': '最終承認',
+                'escalation': 'エスカレーション',
+                'rejection_confirm': '却下確認'
+            }[approval.approvalType] || approval.approvalType;
+
+            return `
+                <div class="approval-card" data-request-id="${approval.requestId}">
+                    <div class="card-header">
+                        <span class="approval-type ${approval.approvalType}">${approvalTypeLabel}</span>
+                        <span class="timestamp">${timeAgo}</span>
+                    </div>
+
+                    <div class="prompt-message">${escapeHtml(approval.promptMessage)}</div>
+
+                    <div class="contract-info">
+                        <div class="info-title">📋 契約情報</div>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">サプライヤー</span>
+                                <span class="info-value">${escapeHtml(contractInfo.supplierName || 'N/A')}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">契約金額</span>
+                                <span class="info-value">$${(contractInfo.contractValue || 0).toLocaleString()}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">契約期間</span>
+                                <span class="info-value">${contractInfo.contractTermMonths || 'N/A'}ヶ月</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="risk-info">
+                        <div class="info-title">📊 リスク評価</div>
+                        <div class="info-grid">
+                            <div class="info-item">
+                                <span class="info-label">リスクスコア</span>
+                                <span class="info-value">${riskAssessment.overallRiskScore || 'N/A'}/100</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">リスクレベル</span>
+                                <span class="info-value">${escapeHtml(riskAssessment.riskLevel || 'N/A')}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="comment-section">
+                        <textarea 
+                            class="comment-input" 
+                            placeholder="コメント（オプション）"
+                            id="comment-${approval.requestId}"></textarea>
+                    </div>
+
+                    <div class="actions">
+                        <button class="btn btn-approve" onclick="handleApproval('${approval.requestId}', true)">
+                            ✓ 承認
+                        </button>
+                        <button class="btn btn-reject" onclick="handleApproval('${approval.requestId}', false)">
+                            ✗ 却下
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function handleApproval(requestId, approved) {
+            const commentEl = document.getElementById(`comment-${requestId}`);
+            const comment = commentEl ? commentEl.value.trim() : null;
+
+            const card = document.querySelector(`[data-request-id="${requestId}"]`);
+            const buttons = card.querySelectorAll('.btn');
+            buttons.forEach(btn => btn.disabled = true);
+
+            try {
+                const response = await fetch(`${API_BASE}/hitl/approve`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        requestId,
+                        approved,
+                        comment: comment || null
+                    })
+                });
+
+                const result = await response.json();
+                
+                if (result.success) {
+                    card.style.opacity = '0.5';
+                    card.style.transform = 'scale(0.95)';
+                    setTimeout(() => {
+                        fetchPendingApprovals();
+                    }, 500);
+                } else {
+                    alert('エラー: ' + result.message);
+                    buttons.forEach(btn => btn.disabled = false);
+                }
+            } catch (error) {
+                console.error('承認処理エラー:', error);
+                alert('エラー: 承認処理に失敗しました');
+                buttons.forEach(btn => btn.disabled = false);
+            }
+        }
+
+        function updateStatus(type, text) {
+            const indicator = document.getElementById('statusIndicator');
+            const statusText = document.getElementById('statusText');
+            
+            indicator.className = `status-indicator ${type}`;
+            statusText.textContent = text;
+        }
+
+        function getTimeAgo(date) {
+            const seconds = Math.floor((new Date() - date) / 1000);
+            
+            if (seconds < 60) return `${seconds}秒前`;
+            if (seconds < 3600) return `${Math.floor(seconds / 60)}分前`;
+            if (seconds < 86400) return `${Math.floor(seconds / 3600)}時間前`;
+            return `${Math.floor(seconds / 86400)}日前`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // 初回読み込みと定期的なポーリング
+        fetchPendingApprovals();
+        pollInterval = setInterval(fetchPendingApprovals, 3000); // 3秒ごとにチェック
+
+        // ページを離れる時にポーリングを停止
+        window.addEventListener('beforeunload', () => {
+            clearInterval(pollInterval);
+        });
+    </script>
+</body>
+</html>
