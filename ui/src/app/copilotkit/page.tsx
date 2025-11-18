@@ -1,6 +1,11 @@
 "use client";
 
-import { CopilotKit } from "@copilotkit/react-core";
+import { 
+  CopilotKit,
+  useCopilotChatSuggestions,
+  useCopilotReadable,
+  useCopilotAction
+} from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { useState } from "react";
@@ -31,6 +36,66 @@ interface Agent {
   description: string;
   color: string;
   examples: string[];
+}
+
+// CopilotKit機能を使用する内部コンポーネント
+function CopilotContent({ 
+  agents, 
+  selectedAgent, 
+  setSelectedAgent 
+}: { 
+  agents: Agent[]; 
+  selectedAgent: Agent;
+  setSelectedAgent: (agent: Agent) => void;
+}) {
+  // 1. useCopilotReadable: エージェント情報をAIと共有
+  useCopilotReadable({
+    description: "現在選択されているエージェントの情報",
+    value: {
+      agentId: selectedAgent.id,
+      agentName: selectedAgent.name,
+      agentDescription: selectedAgent.description,
+      availableAgents: agents.map(a => ({ id: a.id, name: a.name, description: a.description }))
+    }
+  });
+
+  // 2. useCopilotAction: エージェント切り替えアクション
+  useCopilotAction({
+    name: "switchAgent",
+    description: "別の専門エージェントに切り替えます。ユーザーが別の分野の質問をした場合に使用します。",
+    parameters: [
+      {
+        name: "agentId",
+        type: "string",
+        description: "切り替え先のエージェントID (contract, spend, negotiation, sourcing, knowledge, supplier)",
+        required: true,
+      }
+    ],
+    handler: async ({ agentId }) => {
+      const agent = agents.find(a => a.id === agentId);
+      if (agent) {
+        setSelectedAgent(agent);
+        return `${agent.name}に切り替えました。${agent.description}`;
+      }
+      return "エージェントが見つかりませんでした。";
+    },
+  });
+
+  // 3. useCopilotChatSuggestions: 質問例をサジェストとして提供
+  useCopilotChatSuggestions({
+    instructions: `${selectedAgent.name}向けの質問例を提案してください。`,
+    minSuggestions: 3,
+    maxSuggestions: 3,
+  });
+
+  return (
+    <CopilotChat
+      labels={{
+        title: selectedAgent.name,
+        initial: `${selectedAgent.name}に質問してください。専門知識を活用して回答します。\n\n💡 他の分野について質問する場合は、自動的に適切なエージェントに切り替えます。`,
+      }}
+    />
+  );
 }
 
 export default function CopilotKitPage() {
@@ -110,7 +175,6 @@ export default function CopilotKitPage() {
     },
   ];
   const [selectedAgent, setSelectedAgent] = useState<Agent>(agents[0]);
-  const [showExamples, setShowExamples] = useState(true);
 
   const getColorClasses = (color: string) => {
     const colors: Record<string, { bg: string; text: string; border: string; hover: string }> = {
@@ -154,10 +218,7 @@ export default function CopilotKitPage() {
             return (
               <button
                 key={agent.id}
-                onClick={() => {
-                  setSelectedAgent(agent);
-                  setShowExamples(true);
-                }}
+                onClick={() => setSelectedAgent(agent)}
                 className={`w-full text-left p-3 rounded-lg transition-all ${
                   isSelected
                     ? `${colors.bg} ${colors.border} border-2 shadow-md`
@@ -195,7 +256,7 @@ export default function CopilotKitPage() {
       <div className="flex-1 flex flex-col">
         {/* エージェント情報ヘッダー */}
         <div className="bg-white border-b border-slate-200 shadow-sm p-6">
-          <div className="flex items-start gap-4 mb-4">
+          <div className="flex items-start gap-4">
             <div className={`p-3 rounded-xl ${getColorClasses(selectedAgent.color).bg} ${getColorClasses(selectedAgent.color).text}`}>
               {(() => {
                 const AgentIcon = selectedAgent.icon;
@@ -209,41 +270,12 @@ export default function CopilotKitPage() {
               <p className="text-slate-600">
                 {selectedAgent.description}
               </p>
+              <div className="mt-2 flex items-center gap-2 text-sm text-blue-600">
+                <Sparkles className="w-4 h-4" />
+                <span>質問例はチャット下部のサジェストをご覧ください</span>
+              </div>
             </div>
           </div>
-
-          {/* サンプル質問 */}
-          {showExamples && (
-            <div className="bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg p-4 border border-blue-200">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                  <Sparkles className="w-4 h-4 text-blue-600" />
-                  試してみる質問例
-                </h3>
-                <button
-                  onClick={() => setShowExamples(false)}
-                  className="text-xs text-slate-500 hover:text-slate-700"
-                >
-                  閉じる
-                </button>
-              </div>
-              <div className="space-y-2">
-                {selectedAgent.examples.map((example, idx) => (
-                  <div
-                    key={idx}
-                    className="bg-white rounded-md p-3 text-sm text-slate-700 border border-slate-200 hover:border-blue-300 hover:shadow-sm transition-all cursor-pointer"
-                    onClick={() => {
-                      // チャットに質問を送信する機能は将来実装可能
-                      setShowExamples(false);
-                    }}
-                  >
-                    <span className="text-blue-600 mr-2">💬</span>
-                    {example}
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* CopilotKit チャット */}
@@ -253,11 +285,10 @@ export default function CopilotKitPage() {
             runtimeUrl={`/api/copilotkit?agent=${selectedAgent.id}`}
             agent={selectedAgent.id}
           >
-            <CopilotChat
-              labels={{
-                title: selectedAgent.name,
-                initial: `${selectedAgent.name}に質問してください。専門知識を活用して回答します。`,
-              }}
+            <CopilotContent 
+              agents={agents}
+              selectedAgent={selectedAgent}
+              setSelectedAgent={setSelectedAgent}
             />
           </CopilotKit>
         </div>
