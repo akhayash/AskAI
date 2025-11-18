@@ -80,18 +80,48 @@ function CopilotContent({
     },
   });
 
-  // 3. 質問例をメモ化
-  const suggestions = useMemo(() => selectedAgent.examples, [selectedAgent.examples]);
-
   return (
-    <CopilotChat
-      labels={{
-        title: selectedAgent.name,
-        initial: `${selectedAgent.name}に質問してください。専門知識を活用して回答します。\n\n💡 他の分野について質問する場合は、自動的に適切なエージェントに切り替えます。`,
-      }}
-      makeAutosuggestions={true}
-      instructions={`あなたは${selectedAgent.name}です。${selectedAgent.description}に関する質問に答えてください。\n\n推奨される質問例:\n${suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}`}
-    />
+    <>
+      <CopilotChat
+        labels={{
+          title: selectedAgent.name,
+          initial: `${selectedAgent.name}に質問してください。専門知識を活用して回答します。\n\n💡 他の分野について質問する場合は、自動的に適切なエージェントに切り替えます。`,
+        }}
+        instructions={`あなたは${selectedAgent.name}です。${selectedAgent.description}に関する質問に答えてください。`}
+        makeAutosuggestions={true}
+      />
+      
+      {/* Suggestions Panel - CopilotKit style */}
+      <div className="border-t border-slate-200 bg-white p-4">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="w-4 h-4 text-blue-600" />
+            <span className="text-sm font-semibold text-slate-700">試してみる質問例</span>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {selectedAgent.examples.map((example, idx) => (
+              <button
+                key={idx}
+                className="text-left px-4 py-3 text-sm rounded-lg border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all"
+                onClick={() => {
+                  // CopilotKitのチャット入力にテキストを設定
+                  const chatInput = document.querySelector('textarea[placeholder*="Message"]') as HTMLTextAreaElement;
+                  if (chatInput) {
+                    chatInput.value = example;
+                    chatInput.focus();
+                    // Reactのイベントをトリガー
+                    const event = new Event('input', { bubbles: true });
+                    chatInput.dispatchEvent(event);
+                  }
+                }}
+              >
+                <span className="text-slate-700">{example}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -267,16 +297,12 @@ export default function CopilotKitPage() {
               <p className="text-slate-600">
                 {selectedAgent.description}
               </p>
-              <div className="mt-2 flex items-center gap-2 text-sm text-blue-600">
-                <Sparkles className="w-4 h-4" />
-                <span>質問例はチャット下部のサジェストをご覧ください</span>
-              </div>
             </div>
           </div>
         </div>
 
         {/* CopilotKit チャット */}
-        <div className="flex-1 overflow-hidden bg-slate-50">
+        <div className="flex-1 flex flex-col overflow-hidden bg-slate-50">
           <CopilotKit
             key={selectedAgent.id}
             runtimeUrl={`/api/copilotkit?agent=${selectedAgent.id}`}
