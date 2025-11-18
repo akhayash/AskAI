@@ -193,7 +193,7 @@ builder.AddWorkflow("advanced-contract-review", (sp, key) =>
     var chatClientFromDI = sp.GetRequiredService<IChatClient>();
     var loggerFactory = sp.GetRequiredService<ILoggerFactory>();
     var logger = loggerFactory.CreateLogger("AdvancedContractReview");
-    
+
     // ⚠️ 重要: HITL承認をサポートするためにCommunicationを設定
     var communication = sp.GetRequiredService<DevUIWorkflowCommunication>();
     global::AdvancedConditionalWorkflow.Program.Communication = communication;
@@ -302,14 +302,14 @@ var devuiWebPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "de
 if (Directory.Exists(devuiWebPath))
 {
     var fileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(devuiWebPath);
-    
+
     // Enable default files (index.html) for directory requests
     app.UseDefaultFiles(new DefaultFilesOptions
     {
         FileProvider = fileProvider,
         RequestPath = "/ui"
     });
-    
+
     // Serve static files
     app.UseStaticFiles(new StaticFileOptions
     {
@@ -363,6 +363,22 @@ if (builder.Environment.IsDevelopment())
     app.MapDevUI();
 }
 
+// 静的ファイル配信設定 (devui-web)
+var devuiWebPath2 = Path.Combine(Directory.GetCurrentDirectory(), "..", "..", "devui-web");
+if (Directory.Exists(devuiWebPath2))
+{
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new Microsoft.Extensions.FileProviders.PhysicalFileProvider(devuiWebPath2),
+        RequestPath = "/devui-web"
+    });
+    app.Logger.LogInformation("✓ 静的ファイル配信設定完了: {Path}", devuiWebPath2);
+}
+else
+{
+    app.Logger.LogWarning("⚠️ devui-webフォルダが見つかりません: {Path}", devuiWebPath2);
+}
+
 // HITL承認エンドポイント
 app.MapGet("/hitl/pending", (DevUIWorkflowCommunication communication) =>
 {
@@ -375,7 +391,7 @@ app.MapGet("/hitl/pending", (DevUIWorkflowCommunication communication) =>
         req.RiskAssessment,
         req.CreatedAt
     });
-    
+
     return Results.Json(new { requests = pending });
 })
 .WithName("GetPendingHITLApprovals")
@@ -390,7 +406,7 @@ app.MapPost("/hitl/approve", (
         response.RequestId,
         response.Approved,
         response.Comment);
-    
+
     if (success)
     {
         return Results.Ok(new { message = "承認応答を処理しました", success = true });

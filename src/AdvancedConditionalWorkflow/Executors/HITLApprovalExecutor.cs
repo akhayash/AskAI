@@ -161,7 +161,9 @@ public class HITLApprovalExecutor : Executor<ContractRiskOutput, FinalDecision>
         }
 
         // 最終出力を発行
+        _logger?.LogInformation("📤 YieldOutputAsync を実行します...");
         await context.YieldOutputAsync(decision, cancellationToken);
+        _logger?.LogInformation("✅ YieldOutputAsync 完了しました");
 
         return decision;
     }
