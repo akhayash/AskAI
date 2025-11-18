@@ -1,23 +1,22 @@
 "use client";
 
-import { 
+import {
   CopilotKit,
   useCopilotReadable,
   useCopilotAction,
-  useCopilotChat
 } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
 import { useState } from "react";
-import { 
-  FileText, 
-  DollarSign, 
-  Handshake, 
-  ShoppingCart, 
-  BookOpen, 
+import {
+  FileText,
+  DollarSign,
+  Handshake,
+  ShoppingCart,
+  BookOpen,
   Building2,
   Sparkles,
-  MessageSquare
+  MessageSquare,
 } from "lucide-react";
 
 /**
@@ -39,16 +38,14 @@ interface Agent {
 }
 
 // CopilotKit機能を使用する内部コンポーネント
-function CopilotContent({ 
-  agents, 
-  selectedAgent, 
+function CopilotContent({
+  agents,
+  selectedAgent,
   setSelectedAgent,
-  onSuggestionClick
-}: { 
-  agents: Agent[]; 
+}: {
+  agents: Agent[];
   selectedAgent: Agent;
   setSelectedAgent: (agent: Agent) => void;
-  onSuggestionClick: (suggestion: string) => void;
 }) {
   // 1. useCopilotReadable: エージェント情報をAIと共有
   useCopilotReadable({
@@ -57,24 +54,30 @@ function CopilotContent({
       agentId: selectedAgent.id,
       agentName: selectedAgent.name,
       agentDescription: selectedAgent.description,
-      availableAgents: agents.map(a => ({ id: a.id, name: a.name, description: a.description }))
-    }
+      availableAgents: agents.map((a) => ({
+        id: a.id,
+        name: a.name,
+        description: a.description,
+      })),
+    },
   });
 
   // 2. useCopilotAction: エージェント切り替えアクション
   useCopilotAction({
     name: "switchAgent",
-    description: "別の専門エージェントに切り替えます。ユーザーが別の分野の質問をした場合に使用します。",
+    description:
+      "別の専門エージェントに切り替えます。ユーザーが別の分野の質問をした場合に使用します。",
     parameters: [
       {
         name: "agentId",
         type: "string",
-        description: "切り替え先のエージェントID (contract, spend, negotiation, sourcing, knowledge, supplier)",
+        description:
+          "切り替え先のエージェントID (contract, spend, negotiation, sourcing, knowledge, supplier)",
         required: true,
-      }
+      },
     ],
     handler: async ({ agentId }) => {
-      const agent = agents.find(a => a.id === agentId);
+      const agent = agents.find((a) => a.id === agentId);
       if (agent) {
         setSelectedAgent(agent);
         return `${agent.name}に切り替えました。${agent.description}`;
@@ -83,47 +86,18 @@ function CopilotContent({
     },
   });
 
-  // 3. useCopilotChat: チャットAPIを使用してメッセージを送信
-  const { appendMessage } = useCopilotChat();
-
   return (
-    <>
-      <CopilotChat
-        labels={{
-          title: selectedAgent.name,
-          initial: `${selectedAgent.name}に質問してください。専門知識を活用して回答します。\n\n💡 他の分野について質問する場合は、自動的に適切なエージェントに切り替えます。`,
-        }}
-        instructions={`あなたは${selectedAgent.name}です。${selectedAgent.description}に関する質問に答えてください。`}
-        makeAutosuggestions={true}
-      />
-      
-      {/* Suggestions Panel - CopilotKit style */}
-      <div className="border-t border-slate-200 bg-white p-4">
-        <div className="max-w-4xl mx-auto">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="w-4 h-4 text-blue-600" />
-            <span className="text-sm font-semibold text-slate-700">試してみる質問例</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            {selectedAgent.examples.map((example, idx) => (
-              <button
-                key={idx}
-                className="text-left px-4 py-3 text-sm rounded-lg border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all"
-                onClick={() => {
-                  // CopilotChatのAPIを使用してメッセージを送信
-                  appendMessage({
-                    role: "user",
-                    content: example
-                  });
-                }}
-              >
-                <span className="text-slate-700">{example}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-    </>
+    <CopilotChat
+      labels={{
+        title: selectedAgent.name,
+        initial: `${selectedAgent.name}に質問してください。専門知識を活用して回答します。\n\n💡 他の分野について質問する場合は、自動的に適切なエージェントに切り替えます。`,
+      }}
+      instructions={`あなたは${selectedAgent.name}です。${selectedAgent.description}に関する質問に答えてください。`}
+      suggestions={selectedAgent.examples.map((example) => ({
+        title: example,
+        message: example,
+      }))}
+    />
   );
 }
 
@@ -139,8 +113,8 @@ export default function CopilotKitPage() {
       examples: [
         "この契約のリスクを評価してください",
         "自動更新条項について説明してください",
-        "ペナルティ条項の有無を確認してください"
-      ]
+        "ペナルティ条項の有無を確認してください",
+      ],
     },
     {
       id: "spend",
@@ -151,8 +125,8 @@ export default function CopilotKitPage() {
       examples: [
         "今月の支出トレンドを教えてください",
         "コスト削減の機会を特定してください",
-        "予算超過のリスクを分析してください"
-      ]
+        "予算超過のリスクを分析してください",
+      ],
     },
     {
       id: "negotiation",
@@ -163,8 +137,8 @@ export default function CopilotKitPage() {
       examples: [
         "より良い契約条件を提案してください",
         "交渉のポイントを教えてください",
-        "代替案を検討してください"
-      ]
+        "代替案を検討してください",
+      ],
     },
     {
       id: "sourcing",
@@ -175,8 +149,8 @@ export default function CopilotKitPage() {
       examples: [
         "最適なサプライヤーを提案してください",
         "調達プロセスを改善してください",
-        "リスク分散の方法を教えてください"
-      ]
+        "リスク分散の方法を教えてください",
+      ],
     },
     {
       id: "knowledge",
@@ -187,8 +161,8 @@ export default function CopilotKitPage() {
       examples: [
         "社内の調達ポリシーを教えてください",
         "過去の類似案件を探してください",
-        "ベストプラクティスを参照してください"
-      ]
+        "ベストプラクティスを参照してください",
+      ],
     },
     {
       id: "supplier",
@@ -199,20 +173,53 @@ export default function CopilotKitPage() {
       examples: [
         "このサプライヤーの評価を教えてください",
         "納期実績を確認してください",
-        "代替サプライヤーを提案してください"
-      ]
+        "代替サプライヤーを提案してください",
+      ],
     },
   ];
   const [selectedAgent, setSelectedAgent] = useState<Agent>(agents[0]);
 
   const getColorClasses = (color: string) => {
-    const colors: Record<string, { bg: string; text: string; border: string; hover: string }> = {
-      blue: { bg: "bg-blue-50", text: "text-blue-600", border: "border-blue-200", hover: "hover:bg-blue-100" },
-      green: { bg: "bg-green-50", text: "text-green-600", border: "border-green-200", hover: "hover:bg-green-100" },
-      purple: { bg: "bg-purple-50", text: "text-purple-600", border: "border-purple-200", hover: "hover:bg-purple-100" },
-      orange: { bg: "bg-orange-50", text: "text-orange-600", border: "border-orange-200", hover: "hover:bg-orange-100" },
-      indigo: { bg: "bg-indigo-50", text: "text-indigo-600", border: "border-indigo-200", hover: "hover:bg-indigo-100" },
-      cyan: { bg: "bg-cyan-50", text: "text-cyan-600", border: "border-cyan-200", hover: "hover:bg-cyan-100" },
+    const colors: Record<
+      string,
+      { bg: string; text: string; border: string; hover: string }
+    > = {
+      blue: {
+        bg: "bg-blue-50",
+        text: "text-blue-600",
+        border: "border-blue-200",
+        hover: "hover:bg-blue-100",
+      },
+      green: {
+        bg: "bg-green-50",
+        text: "text-green-600",
+        border: "border-green-200",
+        hover: "hover:bg-green-100",
+      },
+      purple: {
+        bg: "bg-purple-50",
+        text: "text-purple-600",
+        border: "border-purple-200",
+        hover: "hover:bg-purple-100",
+      },
+      orange: {
+        bg: "bg-orange-50",
+        text: "text-orange-600",
+        border: "border-orange-200",
+        hover: "hover:bg-orange-100",
+      },
+      indigo: {
+        bg: "bg-indigo-50",
+        text: "text-indigo-600",
+        border: "border-indigo-200",
+        hover: "hover:bg-indigo-100",
+      },
+      cyan: {
+        bg: "bg-cyan-50",
+        text: "text-cyan-600",
+        border: "border-cyan-200",
+        hover: "hover:bg-cyan-100",
+      },
     };
     return colors[color] || colors.blue;
   };
@@ -243,7 +250,7 @@ export default function CopilotKitPage() {
             const AgentIcon = agent.icon;
             const colors = getColorClasses(agent.color);
             const isSelected = selectedAgent.id === agent.id;
-            
+
             return (
               <button
                 key={agent.id}
@@ -286,7 +293,11 @@ export default function CopilotKitPage() {
         {/* エージェント情報ヘッダー */}
         <div className="bg-white border-b border-slate-200 shadow-sm p-6">
           <div className="flex items-start gap-4">
-            <div className={`p-3 rounded-xl ${getColorClasses(selectedAgent.color).bg} ${getColorClasses(selectedAgent.color).text}`}>
+            <div
+              className={`p-3 rounded-xl ${
+                getColorClasses(selectedAgent.color).bg
+              } ${getColorClasses(selectedAgent.color).text}`}
+            >
               {(() => {
                 const AgentIcon = selectedAgent.icon;
                 return <AgentIcon className="w-8 h-8" />;
@@ -296,9 +307,7 @@ export default function CopilotKitPage() {
               <h2 className="text-2xl font-bold text-slate-900 mb-1">
                 {selectedAgent.name}
               </h2>
-              <p className="text-slate-600">
-                {selectedAgent.description}
-              </p>
+              <p className="text-slate-600">{selectedAgent.description}</p>
             </div>
           </div>
         </div>
@@ -310,13 +319,10 @@ export default function CopilotKitPage() {
             runtimeUrl={`/api/copilotkit?agent=${selectedAgent.id}`}
             agent={selectedAgent.id}
           >
-            <CopilotContent 
+            <CopilotContent
               agents={agents}
               selectedAgent={selectedAgent}
               setSelectedAgent={setSelectedAgent}
-              onSuggestionClick={(suggestion) => {
-                // This callback is not used anymore, kept for compatibility
-              }}
             />
           </CopilotKit>
         </div>
