@@ -3,11 +3,12 @@
 import { 
   CopilotKit,
   useCopilotReadable,
-  useCopilotAction
+  useCopilotAction,
+  useCopilotChat
 } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { 
   FileText, 
   DollarSign, 
@@ -41,11 +42,13 @@ interface Agent {
 function CopilotContent({ 
   agents, 
   selectedAgent, 
-  setSelectedAgent 
+  setSelectedAgent,
+  onSuggestionClick
 }: { 
   agents: Agent[]; 
   selectedAgent: Agent;
   setSelectedAgent: (agent: Agent) => void;
+  onSuggestionClick: (suggestion: string) => void;
 }) {
   // 1. useCopilotReadable: エージェント情報をAIと共有
   useCopilotReadable({
@@ -80,33 +83,8 @@ function CopilotContent({
     },
   });
 
-  const handleSuggestionClick = (example: string) => {
-    // より確実な方法でReactの入力を更新
-    const chatInput = document.querySelector('textarea[placeholder*="Message"]') as HTMLTextAreaElement;
-    if (chatInput) {
-      // React内部のプロパティを直接設定
-      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLTextAreaElement.prototype,
-        'value'
-      )?.set;
-      
-      if (nativeInputValueSetter) {
-        nativeInputValueSetter.call(chatInput, example);
-      }
-      
-      // より多くのイベントをトリガー
-      const inputEvent = new Event('input', { bubbles: true });
-      const changeEvent = new Event('change', { bubbles: true });
-      chatInput.dispatchEvent(inputEvent);
-      chatInput.dispatchEvent(changeEvent);
-      
-      // フォーカスを設定
-      chatInput.focus();
-      
-      // カーソルを最後に移動
-      chatInput.setSelectionRange(example.length, example.length);
-    }
-  };
+  // 3. useCopilotChat: チャットAPIを使用してメッセージを送信
+  const { appendMessage } = useCopilotChat();
 
   return (
     <>
@@ -131,7 +109,13 @@ function CopilotContent({
               <button
                 key={idx}
                 className="text-left px-4 py-3 text-sm rounded-lg border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all"
-                onClick={() => handleSuggestionClick(example)}
+                onClick={() => {
+                  // CopilotChatのAPIを使用してメッセージを送信
+                  appendMessage({
+                    role: "user",
+                    content: example
+                  });
+                }}
               >
                 <span className="text-slate-700">{example}</span>
               </button>
@@ -330,6 +314,9 @@ export default function CopilotKitPage() {
               agents={agents}
               selectedAgent={selectedAgent}
               setSelectedAgent={setSelectedAgent}
+              onSuggestionClick={(suggestion) => {
+                // This callback is not used anymore, kept for compatibility
+              }}
             />
           </CopilotKit>
         </div>
