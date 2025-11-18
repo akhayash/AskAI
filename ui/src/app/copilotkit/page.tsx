@@ -87,17 +87,22 @@ function CopilotContent({
   });
 
   return (
-    <CopilotChat
-      labels={{
-        title: selectedAgent.name,
-        initial: `${selectedAgent.name}に質問してください。専門知識を活用して回答します。\n\n💡 他の分野について質問する場合は、自動的に適切なエージェントに切り替えます。`,
-      }}
-      instructions={`あなたは${selectedAgent.name}です。${selectedAgent.description}に関する質問に答えてください。`}
-      suggestions={selectedAgent.examples.map((example) => ({
-        title: example,
-        message: example,
-      }))}
-    />
+    <div className="flex justify-center items-center h-full w-full">
+      <div className="h-full w-full">
+        <CopilotChat
+          className="h-full"
+          labels={{
+            title: selectedAgent.name,
+            initial: `${selectedAgent.name}に質問してください。専門知識を活用して回答します。\n\n💡 他の分野について質問する場合は、自動的に適切なエージェントに切り替えます。`,
+          }}
+          instructions={`あなたは${selectedAgent.name}です。${selectedAgent.description}に関する質問に答えてください。`}
+          suggestions={selectedAgent.examples.map((example) => ({
+            title: example,
+            message: example,
+          }))}
+        />
+      </div>
+    </div>
   );
 }
 
