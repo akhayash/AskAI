@@ -2,13 +2,12 @@
 
 import { 
   CopilotKit,
-  useCopilotChatSuggestions,
   useCopilotReadable,
   useCopilotAction
 } from "@copilotkit/react-core";
 import { CopilotChat } from "@copilotkit/react-ui";
 import "@copilotkit/react-ui/styles.css";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { 
   FileText, 
   DollarSign, 
@@ -81,12 +80,8 @@ function CopilotContent({
     },
   });
 
-  // 3. useCopilotChatSuggestions: 質問例をサジェストとして提供
-  useCopilotChatSuggestions({
-    instructions: `${selectedAgent.name}向けの質問例を提案してください。`,
-    minSuggestions: 3,
-    maxSuggestions: 3,
-  });
+  // 3. 質問例をメモ化
+  const suggestions = useMemo(() => selectedAgent.examples, [selectedAgent.examples]);
 
   return (
     <CopilotChat
@@ -94,6 +89,8 @@ function CopilotContent({
         title: selectedAgent.name,
         initial: `${selectedAgent.name}に質問してください。専門知識を活用して回答します。\n\n💡 他の分野について質問する場合は、自動的に適切なエージェントに切り替えます。`,
       }}
+      makeAutosuggestions={true}
+      instructions={`あなたは${selectedAgent.name}です。${selectedAgent.description}に関する質問に答えてください。\n\n推奨される質問例:\n${suggestions.map((s, i) => `${i + 1}. ${s}`).join('\n')}`}
     />
   );
 }
