@@ -80,6 +80,34 @@ function CopilotContent({
     },
   });
 
+  const handleSuggestionClick = (example: string) => {
+    // より確実な方法でReactの入力を更新
+    const chatInput = document.querySelector('textarea[placeholder*="Message"]') as HTMLTextAreaElement;
+    if (chatInput) {
+      // React内部のプロパティを直接設定
+      const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype,
+        'value'
+      )?.set;
+      
+      if (nativeInputValueSetter) {
+        nativeInputValueSetter.call(chatInput, example);
+      }
+      
+      // より多くのイベントをトリガー
+      const inputEvent = new Event('input', { bubbles: true });
+      const changeEvent = new Event('change', { bubbles: true });
+      chatInput.dispatchEvent(inputEvent);
+      chatInput.dispatchEvent(changeEvent);
+      
+      // フォーカスを設定
+      chatInput.focus();
+      
+      // カーソルを最後に移動
+      chatInput.setSelectionRange(example.length, example.length);
+    }
+  };
+
   return (
     <>
       <CopilotChat
@@ -103,17 +131,7 @@ function CopilotContent({
               <button
                 key={idx}
                 className="text-left px-4 py-3 text-sm rounded-lg border border-slate-200 hover:border-blue-400 hover:bg-blue-50 transition-all"
-                onClick={() => {
-                  // CopilotKitのチャット入力にテキストを設定
-                  const chatInput = document.querySelector('textarea[placeholder*="Message"]') as HTMLTextAreaElement;
-                  if (chatInput) {
-                    chatInput.value = example;
-                    chatInput.focus();
-                    // Reactのイベントをトリガー
-                    const event = new Event('input', { bubbles: true });
-                    chatInput.dispatchEvent(event);
-                  }
-                }}
+                onClick={() => handleSuggestionClick(example)}
               >
                 <span className="text-slate-700">{example}</span>
               </button>
