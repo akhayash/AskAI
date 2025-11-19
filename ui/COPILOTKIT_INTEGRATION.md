@@ -21,6 +21,9 @@ npm install
 
 - `@copilotkit/react-core`: CopilotKit コアライブラリ
 - `@copilotkit/react-ui`: CopilotKitUI コンポーネント
+- `@copilotkit/runtime`: CopilotKit ランタイム
+- `@ag-ui/client`: AG-UIプロトコルクライアント
+- `openai`: OpenAI SDK (CopilotKitの要件)
 
 ### 2. バックエンドの起動
 
@@ -37,7 +40,8 @@ DevUIHost はポート 5000 で起動し、以下の AG-UI エンドポイント
 - `/agents/sourcing` - 調達専門家
 - `/agents/spend` - 支出分析専門家
 - `/agents/negotiation` - 交渉専門家
-- その他複数の専門エージェント
+- `/agents/knowledge` - 知識管理専門家
+- `/agents/supplier` - サプライヤー管理専門家
 
 ### 3. フロントエンドの起動
 
@@ -95,9 +99,9 @@ CopilotKit を使用した基本的なエージェントチャット。
 
 ### ポイント
 
-1. **プロキシ不要**: CopilotKit は AG-UI 準拠なので、DevUIHost のエンドポイントに直接接続
+1. **API Route経由**: `/api/copilotkit` がHttpAgentを使用してAG-UIエンドポイントに接続
 2. **バックエンド変更不要**: 既存の `MapAGUI()` エンドポイントがそのまま利用可能
-3. **HITL 統合**: DevUIHost の `/hitl/*` エンドポイントを活用
+3. **OpenAIAdapter使用**: CopilotKitの要件として必要（実際のLLM呼び出しはAG-UI側で実行）
 
 ## トラブルシューティング
 
